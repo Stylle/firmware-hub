@@ -105,7 +105,7 @@ func (a *App) revokeDevice(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "database_error", "撤销失败")
 		return
 	}
-	a.audit(u.ID, "", "device.revoke")
+	a.auditProject(u.ID, pid, "device.revoke")
 	jsonOut(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) heartbeat(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +172,6 @@ func (a *App) clearTelemetry(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "database_error", "清除失败")
 		return
 	}
-	a.audit(u.ID, "", "telemetry.clear")
+	a.auditProject(u.ID, pid, "telemetry.clear")
 	jsonOut(w, 200, map[string]bool{"ok": true})
 }

@@ -5,7 +5,7 @@
 ## 检查兼容更新
 
 ```http
-GET /api/v1/update/controller/check?channel=stable&platform=test&arch=x64&hardware=board-a&sequence=1&security=0
+GET /api/v1/update/controller/check?channel=stable&platform=test&arch=x64&hardware=board-a&sequence=1&security=0&version=1.0.0
 Authorization: Bearer <设备凭据>
 ```
 
@@ -13,7 +13,9 @@ Authorization: Bearer <设备凭据>
 
 `update=false` 表示没有符合当前条件的较新版本，不代表所有其他平台没有新版本。`sequence` 是已安装发布序号，`security` 是客户端安全下限。筛选条件不是授权依据，凭据仍必须属于该项目。
 
-不允许从服务器取得的时间直接替代可信时钟，也不能从响应中的普通 JSON 字段直接决定安装；先用预置公钥验证签名，再应用客户端兼容与防回滚策略。
+`version` 是当前实际安装版本；按文件更新只有 `base_version` 匹配时才提供。`package_kind` 为 `full` 或 `file`，同时返回原始 `file_name`、`base_version`、`target_path` 和发布账号 `published_by`。不要把未完成的下载当作已安装。
+
+默认账号模式的 `signature` 为空；客户端显式选择信任 HTTPS Hub 元数据，仍检查兼容范围、序号、大小与 SHA-256。高级模式使用预置公钥验证签名；失败不得退回账号模式。不从响应 server_time 直接替代可信时钟。
 
 ## 历史与下载
 
@@ -23,6 +25,7 @@ Authorization: Bearer <设备凭据>
 - 支持单区间 Range / If-Range，206 为部分响应，416 为区间无效。
 - ETag 为带双引号的文件 SHA-256；续传时要固定文件身份，ETag 变化禁止直接拼接。
 - 公开项目的已发布元数据与文件无需凭据；设备状态永不公开。
+- `GET /public`：公开项目目录；`GET /public/{slug}`：公开发布历史。网页入口 `/?public`、`/?project=controller` 无需登录。
 - 单页最多 200 条，可持续向前分页；管理接口与公开发布页接口支持相同分页参数。
 
 ## 可选设备状态通道
@@ -62,8 +65,20 @@ Content-Type: application/json
 - `/projects/{id}/devices`、`DELETE /devices/{id}`
 - `/projects/{id}/notifications`、`/projects/{id}/logs`
 - `/settings`、`/users`
+- `GET /activity`：自己的登录历史与会话；管理员可用 `?all=1` 查看全站。`DELETE /sessions/{id}` 撤销自己的会话，管理员可撤销其他账号的会话。会话编号不是登录凭据。
+- `GET /projects/{id}/audit`：有项目访问权的成员查看操作账号、动作和时间。
 
-上传用 multipart，字段顺序为 `manifest`（签名 envelope JSON）、`notes`（可选）、`file`。最大文件 1 GiB，版本说明 32 KiB。先验签，再流式核对文件；上传不会自动发布。
+普通上传用 multipart，顺序为 `metadata`（下面 JSON）、`notes`（可选）、`file`。不需要用户计算摘要或准备清单：
+
+```json
+{"version":"1.1.0","channel":"stable","platform":"windows","arch":"x64","hardware":"any","package_kind":"file","base_version":"1.0.0","target_path":"plugins/module.dll"}
+```
+
+`package_kind=full` 时 base_version/target_path 必须为空。除版本号外可以省略兼容字段，默认 stable/any；顺序号可省略，服务器自动分配。最大文件 1 GiB，版本说明 32 KiB。版本不可覆盖，先保存草稿。
+
+高级项目沿用 `manifest`（签名 envelope JSON）、`notes`、`file`。必须匹配项目预置公钥；普通 metadata 上传不会绕过签名策略。
+
+发布 `PUT /releases/{id}/publish` 使用 `{"published":true,"publish_password":"项目密码（启用时必填）"}`。撤回仅需 published=false；权限控制始终生效。创建项目时 `public_key` 可留空，`publish_password` 可选。修改/清除发布密码或关闭签名时须提供 `account_password`；响应不会返回这些密码或摘要。
 
 错误统一为 `{"error":"machine_code","message":"可读原因"}`。常见状态为 400 参数/签名错误、401 凭据失效、403 权限/采集关闭、409 版本重复、429 限流、507 存储失败。设备必须处理错误，不能在错误后退化为跳过验证。
 

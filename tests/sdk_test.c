@@ -43,6 +43,7 @@ int main(int argc, char **argv) {
     assert(fw_verify_manifest(vector + 96, n - 96, vector + 32, vector, &p, verify, NULL, &m) ==
            FW_OK);
     assert(m.sequence == 2 && m.security == 1 && m.size == 100);
+    assert(fw_accept_server_manifest(vector + 96, n - 96, &p, &m) == FW_OK);
     memset(sha, 0xab, sizeof(sha));
     assert(fw_verify_artifact(&m, sha, 100) == FW_OK);
     sha[0] ^= 1;
@@ -88,8 +89,10 @@ int main(int argc, char **argv) {
     assert(fw_make_check_path(&p, path, sizeof(path)) == FW_OK);
     assert(strstr(path, "sequence=0&security=0"));
     p.channel = "beta+test";
+    p.current_version = "1.0.0+build";
     assert(fw_make_check_path(&p, path, sizeof(path)) == FW_OK);
     assert(strstr(path, "channel=beta%2Btest"));
+    assert(strstr(path, "version=1.0.0%2Bbuild"));
     p.channel = "stable";
     assert(fw_make_check_path(&p, path, 5) == FW_BUFFER_TOO_SMALL);
     assert(fw_heartbeat(&p, "1.0.0", "idle", transport, NULL) == FW_DISABLED);

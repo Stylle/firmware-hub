@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
+import ActivityPanel from "./ActivityPanel.vue";
 type User = { id: number; name: string; admin: boolean; csrf: string };
 type Project = {
   id: number;
@@ -13,6 +14,9 @@ type Project = {
   timeout: number;
   public_key: string;
   role: string;
+  has_publish_password: boolean;
+  publish_password?: string;
+  account_password?: string;
 };
 type Release = {
   id: number;
@@ -29,6 +33,13 @@ type Release = {
   published: boolean;
   created: number;
   download: string;
+  file_name: string;
+  package_kind: string;
+  base_version: string;
+  target_path: string;
+  uploaded_by: string;
+  published_by: string;
+  published_at: number;
 };
 type Device = {
   id: number;
@@ -78,6 +89,19 @@ const projects = ref<Project[]>([]),
   members = ref<{ id: number; name: string; role: string }[]>([]),
   users = ref<User[]>([]);
 const historyMore = ref(false);
+const audits = ref<{ id: number; name: string; action: string; at: number }[]>(
+  [],
+);
+const uploadMeta = ref({
+  version: "",
+  channel: "stable",
+  platform: "any",
+  arch: "any",
+  hardware: "any",
+  package_kind: "full",
+  base_version: "",
+  target_path: "",
+});
 const loginName = ref("admin"),
   loginPassword = ref(""),
   loginOTP = ref(""),
@@ -104,6 +128,7 @@ const freshProject = (): Project => ({
   timeout: 180,
   public_key: "",
   role: "owner",
+  has_publish_password: false,
 });
 const draft = ref<Project>(freshProject()),
   notice = ref<Notice>({
@@ -128,6 +153,11 @@ const publicSlug = new URLSearchParams(location.search).get("project"),
     slug: string;
     description: string;
   } | null>(null);
+const publicMode =
+  !!publicSlug || new URLSearchParams(location.search).has("public");
+const publicProjects = ref<
+  { slug: string; name: string; description: string }[]
+>([]);
 const project = computed(() =>
   projects.value.find((p) => p.id === selected.value),
 );
@@ -334,6 +364,7 @@ async function loadSection() {
       break;
     case "logs":
       logs.value = await api<Log[]>(`/projects/${p.id}/logs`);
+      audits.value = await api(`/projects/${p.id}/audit`);
       break;
     case "members":
       members.value = await api(`/projects/${p.id}/members`);
@@ -352,7 +383,7 @@ async function createProject() {
     selected.value = p.id;
     modal.value = "";
     await loadProjects();
-    message.value = "项目已创建。签名私钥应保存在发布者本地。";
+    message.value = "项目已创建，可以直接上传文件并填写版本。";
   });
 }
 async function saveProject() {
@@ -377,7 +408,11 @@ async function createDevice() {
   });
 }
 async function revoke(d: Device) {
-  if (!confirm(`撤销 ${d.name} 的访问凭据？该设备将无法检查、下载及上报。`))
+  if (
+    !confirm(
+      `撤销 ${d.name} 的专属访问凭据与上报权限？公开项目仍可匿名检查、下载。`,
+    )
+  )
     return;
   await run(async () => {
     await api(`/devices/${d.id}`, { method: "DELETE" });
@@ -406,10 +441,19 @@ async function toggleRelease(r: Release) {
     )
   )
     return;
+  let password = "";
+  if (!r.published && project.value?.has_publish_password) {
+    const value = prompt("请输入此项目的发布密码（不保存到浏览器）");
+    if (value === null) return;
+    password = value;
+  }
   await run(async () => {
     await api(`/releases/${r.id}/publish`, {
       method: "PUT",
-      body: JSON.stringify({ published: !r.published }),
+      body: JSON.stringify({
+        published: !r.published,
+        publish_password: password,
+      }),
     });
     await refresh();
     message.value = r.published ? "版本已撤回" : "版本已发布，通知已入队";
@@ -422,12 +466,24 @@ function fileChange(e: Event, kind: string) {
 }
 async function upload() {
   await run(async () => {
-    if (!manifestFile.value || !artifactFile.value)
-      throw new Error("请选择签名清单和对应固件文件");
-    if (manifestFile.value.size > 8192) throw new Error("签名清单过大");
-    const env = JSON.parse(await manifestFile.value.text());
+    if (!artifactFile.value) throw new Error("请选择固件或软件文件");
     const data = new FormData();
-    data.append("manifest", JSON.stringify(env));
+    if (project.value!.public_key) {
+      if (!manifestFile.value)
+        throw new Error("该项目启用高级签名，请选择签名清单");
+      if (manifestFile.value.size > 8192) throw new Error("签名清单过大");
+      data.append(
+        "manifest",
+        JSON.stringify(JSON.parse(await manifestFile.value.text())),
+      );
+    } else {
+      const meta = { ...uploadMeta.value };
+      if (meta.package_kind === "full") {
+        meta.base_version = "";
+        meta.target_path = "";
+      }
+      data.append("metadata", JSON.stringify(meta));
+    }
     data.append("notes", uploadNotes.value);
     data.append("file", artifactFile.value);
     uploadProgress.value = 0;
@@ -458,8 +514,9 @@ async function upload() {
     manifestFile.value = null;
     artifactFile.value = null;
     uploadNotes.value = "";
+    uploadMeta.value.version = "";
     await refresh();
-    message.value = "签名与文件校验通过，版本已保存为草稿。";
+    message.value = "文件已保存为草稿，发布操作将记录当前账号署名。";
   });
 }
 async function saveNotice() {
@@ -544,6 +601,10 @@ async function copy(text: string) {
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(async () => {
   await run(async () => {
+    if (publicMode && !publicSlug) {
+      publicProjects.value = await api("/public");
+      return;
+    }
     if (publicSlug) {
       const p = await api<{
         project: { name: string; slug: string; description: string };
@@ -578,15 +639,34 @@ onUnmounted(() => {
 
 <template>
   <div v-if="!ready" class="loading">Firmware Hub · 正在连接</div>
-  <main v-else-if="publicSlug" class="public-page">
+  <main v-else-if="publicMode" class="public-page">
     <a class="brand" href="/"><img src="/icon.svg" alt="" /> Firmware Hub</a>
+    <div class="row">
+      <a href="/?public">所有公开项目</a><span class="spacer"></span
+      ><a href="/">管理登录 →</a>
+    </div>
     <header class="public-head">
       <span class="eyebrow">RELEASE CENTER</span>
-      <h1>{{ publicProject?.name || "项目不可用" }}</h1>
+      <h1>
+        {{ publicSlug ? publicProject?.name || "项目不可用" : "公开版本中心" }}
+      </h1>
       <p>{{ publicProject?.description }}</p>
     </header>
     <p v-if="error" class="alert error">{{ error }}</p>
-    <p v-if="!releases.length && !error" class="empty">暂时没有公开版本</p>
+    <template v-if="!publicSlug">
+      <p v-if="!publicProjects.length && !error" class="empty">
+        暂时没有公开项目
+      </p>
+      <article v-for="p in publicProjects" :key="p.slug" class="card">
+        <h2>
+          <a :href="'/?project=' + encodeURIComponent(p.slug)"
+            >{{ p.name }} ↗</a
+          >
+        </h2>
+        <p class="muted">{{ p.description }}</p>
+      </article>
+    </template>
+    <p v-else-if="!releases.length && !error" class="empty">暂时没有公开版本</p>
     <article v-for="r in releases" :key="r.id" class="card release">
       <div class="row">
         <h2>{{ r.version }}</h2>
@@ -595,6 +675,13 @@ onUnmounted(() => {
         }}</span>
       </div>
       <ReleaseNotes :notes="r.notes" />
+      <p class="muted">
+        {{ r.package_kind === "file" ? "按文件更新" : "完整文件 / 整包" }} ·
+        {{ r.file_name }} · 发布者：{{ r.published_by || "历史记录"
+        }}<span v-if="r.base_version">
+          · 适用旧版本 {{ r.base_version }} → {{ r.target_path }}</span
+        >
+      </p>
       <div class="row">
         <span>{{ r.platform }} / {{ r.arch }} / {{ r.hardware }}</span
         ><span class="muted">{{ size(r.size) }}</span
@@ -603,9 +690,7 @@ onUnmounted(() => {
       <details>
         <summary>完整性校验</summary>
         <code>{{ r.sha256 }}</code>
-        <p class="muted">
-          请使用客户端预置公钥验证签名。网页上的校验值不能代替可信验签。
-        </p>
+        <p class="muted">SHA-256 用于检查传输完整性，不是发布者数字签名。</p>
       </details>
     </article>
     <button v-if="historyMore" :disabled="busy" @click="olderReleases">
@@ -616,22 +701,23 @@ onUnmounted(() => {
     <section class="login-story">
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
       <div>
-        <span class="eyebrow">BUILD. SIGN. DELIVER.</span>
+        <span class="eyebrow">BUILD. RELEASE. DELIVER.</span>
         <h1>每一次更新，<br />都有可信的起点。</h1>
         <p>
           面向设备与应用的轻量分发中心。<br />版本、发布与设备状态，在同一个地方。
         </p>
         <div class="story-grid">
-          <span>01 / 独立验签</span><span>02 / 可靠传输</span
+          <span>01 / 账号署名</span><span>02 / 可靠传输</span
           ><span>03 / 按需采集</span>
         </div>
       </div>
-      <small>签名留在本地 · 分发交给 Hub</small>
+      <small>清晰发布 · 轻量交付</small>
     </section>
     <section class="login-form">
       <span class="eyebrow">WELCOME BACK</span>
       <h2>登录工作空间</h2>
       <p class="muted">使用管理员或项目成员账号继续。</p>
+      <p><a href="/?public">无需登录，浏览公开版本 →</a></p>
       <form @submit.prevent="login">
         <label
           >用户名<input
@@ -667,7 +753,7 @@ onUnmounted(() => {
   <div v-else class="shell">
     <aside class="sidebar">
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
-      <div class="space-label">工作空间 <span>v0.1</span></div>
+      <div class="space-label">工作空间 <span>v0.2</span></div>
       <button
         class="new-project"
         @click="
@@ -798,66 +884,70 @@ onUnmounted(() => {
                 u.admin ? "管理员" : "普通用户"
               }}</span>
             </div>
+          </section>
+          <ActivityPanel :request="api" :all="true"
+        /></template>
+        <template v-else-if="section === 'account'"
+          ><ActivityPanel :request="api" />
+          <section class="card">
+            <h2>验证器二次验证</h2>
+            <p class="muted">
+              保护网页登录，不影响设备凭据和固件下载。支持常见 TOTP
+              验证器；启用后请保存好验证器备份。
+            </p>
+            <span class="badge" :class="mfaEnabled ? 'green' : 'gray'">{{
+              mfaEnabled ? "已启用" : "尚未启用"
+            }}</span>
+            <form
+              @submit.prevent="
+                configureMFA(
+                  mfaEnabled ? 'disable' : mfaSecret ? 'confirm' : 'begin',
+                )
+              "
+            >
+              <label
+                >当前登录密码<input
+                  v-model="mfaPassword"
+                  type="password"
+                  required
+                  autocomplete="current-password"
+              /></label>
+              <template v-if="mfaSecret"
+                ><p class="hint">
+                  请用验证器扫描二维码，或手动输入密钥。确认前不会启用。
+                </p>
+                <img
+                  :src="mfaQR"
+                  width="220"
+                  height="220"
+                  alt="验证器绑定二维码"
+                /><code class="token">{{ mfaSecret }}</code></template
+              >
+              <label v-if="mfaEnabled || mfaSecret"
+                >验证器当前校验码<input
+                  v-model="mfaCode"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxlength="6"
+                  required
+              /></label>
+              <button class="primary" :disabled="busy">
+                {{
+                  mfaEnabled
+                    ? "验证并关闭"
+                    : mfaSecret
+                      ? "确认启用"
+                      : "添加验证器"
+                }}
+              </button>
+            </form>
+            <p class="muted footnote">
+              更改后撤销本账号全部会话并重新登录。验证器丢失可通过本机
+              admin-sync 恢复管理员。
+            </p>
           </section></template
         >
-        <section v-else-if="section === 'account'" class="card">
-          <h2>验证器二次验证</h2>
-          <p class="muted">
-            保护网页登录，不影响设备凭据和固件下载。支持常见 TOTP
-            验证器；启用后请保存好验证器备份。
-          </p>
-          <span class="badge" :class="mfaEnabled ? 'green' : 'gray'">{{
-            mfaEnabled ? "已启用" : "尚未启用"
-          }}</span>
-          <form
-            @submit.prevent="
-              configureMFA(
-                mfaEnabled ? 'disable' : mfaSecret ? 'confirm' : 'begin',
-              )
-            "
-          >
-            <label
-              >当前登录密码<input
-                v-model="mfaPassword"
-                type="password"
-                required
-                autocomplete="current-password"
-            /></label>
-            <template v-if="mfaSecret"
-              ><p class="hint">
-                请用验证器扫描二维码，或手动输入密钥。确认前不会启用。
-              </p>
-              <img
-                :src="mfaQR"
-                width="220"
-                height="220"
-                alt="验证器绑定二维码"
-              /><code class="token">{{ mfaSecret }}</code></template
-            >
-            <label v-if="mfaEnabled || mfaSecret"
-              >验证器当前校验码<input
-                v-model="mfaCode"
-                inputmode="numeric"
-                autocomplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxlength="6"
-                required
-            /></label>
-            <button class="primary" :disabled="busy">
-              {{
-                mfaEnabled
-                  ? "验证并关闭"
-                  : mfaSecret
-                    ? "确认启用"
-                    : "添加验证器"
-              }}
-            </button>
-          </form>
-          <p class="muted footnote">
-            更改后撤销本账号全部会话并重新登录。验证器丢失可通过本机 admin-sync
-            恢复管理员。
-          </p>
-        </section>
         <section v-else-if="!project" class="card empty">
           <div class="empty-icon">▣</div>
           <h2>从一个项目开始</h2>
@@ -896,7 +986,9 @@ onUnmounted(() => {
                   : releases.filter((r) => r.published).length
               }}</strong
               ><small>{{
-                section === "devices" ? "不是持续连通性保证" : "签名校验后发布"
+                section === "devices"
+                  ? "不是持续连通性保证"
+                  : "按账号记录发布责任"
               }}</small>
             </article>
             <article>
@@ -924,7 +1016,7 @@ onUnmounted(() => {
             <div v-if="!releases.length" class="empty">
               <div class="empty-icon">↑</div>
               <h3>还没有发布版本</h3>
-              <p>上传固件与本地签名清单，通过校验后再发布。</p>
+              <p>上传固件、软件整包或单个文件，填写版本说明后发布。</p>
             </div>
             <article v-for="r in releases" :key="r.id" class="release">
               <div class="row">
@@ -942,6 +1034,19 @@ onUnmounted(() => {
                 {{ size(r.size) }} · 发布序号 {{ r.sequence }}
               </p>
               <ReleaseNotes :notes="r.notes" />
+              <p class="muted">
+                {{
+                  r.package_kind === "file" ? "按文件更新" : "完整文件 / 整包"
+                }}
+                · {{ r.file_name
+                }}<span v-if="r.base_version">
+                  · {{ r.base_version }} → {{ r.target_path }}</span
+                ><br />上传：{{ r.uploaded_by }} · 发布：{{
+                  r.published_by || "尚未发布"
+                }}<span v-if="r.published_at">
+                  · {{ date(r.published_at) }}</span
+                >
+              </p>
               <div class="row">
                 <a class="button" :href="r.download">下载 ↓</a
                 ><button
@@ -1098,6 +1203,18 @@ onUnmounted(() => {
             </form>
           </section>
           <section v-else-if="section === 'logs'" class="card">
+            <h2>项目操作记录</h2>
+            <p class="muted">
+              记录操作账号、版本发布/撤回与设置变更；最近 200
+              条。账号署名不是数字签名。
+            </p>
+            <div v-for="a in audits" :key="a.id" class="list-row">
+              <div>
+                <strong>{{ a.name }}</strong>
+                <p>{{ a.action }}</p>
+                <small>{{ date(a.at) }}</small>
+              </div>
+            </div>
             <h2>通知投递记录</h2>
             <div v-if="!logs.length" class="empty">
               暂无投递记录。发布版本并配置渠道后会在这里显示。
@@ -1196,15 +1313,53 @@ onUnmounted(() => {
                 /></label>
               </div>
               <hr />
+              <h3>发布保护</h3>
+              <p class="muted">
+                当前：{{
+                  draft.public_key
+                    ? "高级数字签名模式"
+                    : "账号发布模式，无需 fwtool"
+                }}。账号模式信任服务器与账号权限，不能抵御服务器被入侵后替换更新。
+              </p>
               <label
-                >固定信任公钥<input
+                >高级签名公钥<input
                   :value="draft.public_key"
                   readonly
                   class="mono"
               /></label>
               <p class="muted">
-                网页不可直接替换客户端的信任根。首版密钥迁移通过受控客户端更新完成。
+                保留高级模式以兼容已有客户端；默认新项目不需要公钥或签名工具。
               </p>
+              <button
+                v-if="owner && draft.public_key"
+                type="button"
+                @click="draft.public_key = ''"
+              >
+                改为账号发布模式
+              </button>
+              <label v-if="owner"
+                >项目发布密码（可选，留空关闭；不修改则不要输入）<input
+                  v-model="draft.publish_password"
+                  type="password"
+                  autocomplete="new-password"
+                  :placeholder="
+                    draft.has_publish_password
+                      ? '已启用，未修改则保持'
+                      : '未启用'
+                  "
+              /></label>
+              <label
+                v-if="
+                  owner &&
+                  (draft.publish_password !== undefined ||
+                    draft.public_key !== project.public_key)
+                "
+                >验证当前账号密码<input
+                  v-model="draft.account_password"
+                  type="password"
+                  autocomplete="current-password"
+                  required
+              /></label>
               <button v-if="owner" class="primary" :disabled="busy">
                 保存项目设置
               </button>
@@ -1213,7 +1368,7 @@ onUnmounted(() => {
         </template>
       </div>
       <footer class="page-footer">
-        Firmware Hub · 独立签名，可信交付 <span>轻量分发 / 按需连接</span>
+        Firmware Hub · 清晰发布，轻量交付 <span>账号署名 / 按需连接</span>
       </footer>
     </div>
   </div>
@@ -1269,19 +1424,29 @@ onUnmounted(() => {
           /></label>
         </div>
         <label
-          >介绍<textarea v-model="draft.description" rows="2"></textarea></label
-        ><label
-          >Ed25519 公钥（64 位十六进制）<input
-            v-model="draft.public_key"
-            pattern="[0-9a-fA-F]{64}"
-            required
-            class="mono"
-            placeholder="仅填写公钥，绝不上传私钥"
+          >介绍<textarea v-model="draft.description" rows="2"></textarea>
+        </label>
+        <details>
+          <summary>高级：独立数字签名（可选）</summary>
+          <label
+            >Ed25519 公钥（64 位十六进制）<input
+              v-model="draft.public_key"
+              pattern="[0-9a-fA-F]{64}"
+              class="mono"
+              placeholder="仅填写公钥，绝不上传私钥"
+          /></label>
+          <p class="hint">
+            仅高级模式需要在本地运行
+            <code>fwtool keygen --out publisher.key</code>。私钥留在发布者本地。
+          </p>
+        </details>
+        <label
+          >项目发布密码（可选，12–72 字节）<input
+            v-model="draft.publish_password"
+            type="password"
+            autocomplete="new-password"
+            placeholder="留空不启用"
         /></label>
-        <p class="hint">
-          先在本地运行
-          <code>fwtool keygen --out publisher.key</code>。私钥留在发布者本地。
-        </p>
         <label class="check"
           ><input
             v-model="draft.telemetry"
@@ -1296,9 +1461,52 @@ onUnmounted(() => {
       </form>
       <form v-else-if="modal === 'release'" @submit.prevent="upload">
         <p class="muted">
-          固件先在本地签名。上传后只保存为草稿，不自动推送或安装。
+          上传后保存为草稿；发布时记录操作账号，不自动安装到客户端。
         </p>
-        <label
+        <div v-if="!project?.public_key" class="form-grid">
+          <label
+            >版本号<input
+              v-model="uploadMeta.version"
+              required
+              pattern="[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}"
+              placeholder="1.2.0"
+          /></label>
+          <label
+            >更新方式<select v-model="uploadMeta.package_kind">
+              <option value="full">完整文件 / 软件整包</option>
+              <option value="file">按文件更新（DLL / EXE 等）</option>
+            </select></label
+          >
+          <template v-if="uploadMeta.package_kind === 'file'"
+            ><label
+              >适用旧版本<input
+                v-model="uploadMeta.base_version"
+                required
+                placeholder="1.1.0" /></label
+            ><label
+              >软件目录内目标路径<input
+                v-model="uploadMeta.target_path"
+                required
+                placeholder="MyApp.exe 或 plugins/module.dll" /></label
+          ></template>
+        </div>
+        <p v-if="!project?.public_key" class="hint">
+          整包可上传 windeployqt 生成目录的 ZIP（文件直接位于 ZIP
+          根目录）；也可直接上传设备
+          BIN。按文件更新只替换指定文件，不是二进制差分；仅向适用旧版本提供。
+        </p>
+        <details v-if="!project?.public_key">
+          <summary>通道与兼容范围（可保持默认）</summary>
+          <div class="form-grid">
+            <label>通道<input v-model="uploadMeta.channel" required /></label
+            ><label>平台<input v-model="uploadMeta.platform" required /></label
+            ><label>架构<input v-model="uploadMeta.arch" required /></label
+            ><label
+              >硬件型号<input v-model="uploadMeta.hardware" required
+            /></label>
+          </div>
+        </details>
+        <label v-if="project?.public_key"
           >签名清单 manifest.json<input
             type="file"
             accept=".json"
@@ -1323,7 +1531,7 @@ onUnmounted(() => {
         </details>
         <progress v-if="busy" :value="uploadProgress" max="100"></progress
         ><button class="primary" :disabled="busy">
-          {{ busy ? `上传并校验 ${uploadProgress}%` : "上传并校验签名" }}
+          {{ busy ? `上传并校验 ${uploadProgress}%` : "保存草稿" }}
         </button>
       </form>
       <template v-else

@@ -2,10 +2,12 @@ package hub
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,31 +20,45 @@ import (
 )
 
 type release struct {
-	ID        int64  `json:"id"`
-	Version   string `json:"version"`
-	Sequence  int64  `json:"sequence"`
-	Security  int64  `json:"security"`
-	Channel   string `json:"channel"`
-	Platform  string `json:"platform"`
-	Arch      string `json:"arch"`
-	Hardware  string `json:"hardware"`
-	SHA256    string `json:"sha256"`
-	Size      int64  `json:"size"`
-	Payload   string `json:"payload"`
-	Signature string `json:"signature"`
-	Notes     string `json:"notes"`
-	Published bool   `json:"published"`
-	Created   int64  `json:"created"`
-	Download  string `json:"download"`
+	ID          int64  `json:"id"`
+	Version     string `json:"version"`
+	Sequence    int64  `json:"sequence"`
+	Security    int64  `json:"security"`
+	Channel     string `json:"channel"`
+	Platform    string `json:"platform"`
+	Arch        string `json:"arch"`
+	Hardware    string `json:"hardware"`
+	SHA256      string `json:"sha256"`
+	Size        int64  `json:"size"`
+	Payload     string `json:"payload"`
+	Signature   string `json:"signature"`
+	Notes       string `json:"notes"`
+	Published   bool   `json:"published"`
+	Created     int64  `json:"created"`
+	Download    string `json:"download"`
+	FileName    string `json:"file_name"`
+	PackageKind string `json:"package_kind"`
+	BaseVersion string `json:"base_version"`
+	TargetPath  string `json:"target_path"`
+	UploadedBy  string `json:"uploaded_by"`
+	PublishedBy string `json:"published_by"`
+	PublishedAt int64  `json:"published_at"`
 }
 
-const releaseCols = "id,version,sequence,security,channel,platform,arch,hardware,sha256,size,payload,signature,notes,published,created"
+const releaseCols = "id,version,sequence,security,channel,platform,arch,hardware,sha256,size,payload,signature,notes,published,created," +
+	"COALESCE((SELECT file_name FROM release_info WHERE release_id=releases.id),'firmware.bin')," +
+	"COALESCE((SELECT package_kind FROM release_info WHERE release_id=releases.id),'full')," +
+	"COALESCE((SELECT base_version FROM release_info WHERE release_id=releases.id),'')," +
+	"COALESCE((SELECT target_path FROM release_info WHERE release_id=releases.id),'')," +
+	"COALESCE((SELECT u.name FROM release_info i JOIN users u ON u.id=i.uploader_id WHERE i.release_id=releases.id),'历史记录')," +
+	"COALESCE((SELECT u.name FROM release_info i JOIN users u ON u.id=i.publisher_id WHERE i.release_id=releases.id),'')," +
+	"COALESCE((SELECT published_at FROM release_info WHERE release_id=releases.id),0)"
 
 type scanner interface{ Scan(...any) error }
 
 func scanRelease(s scanner) (release, error) {
 	var v release
-	e := s.Scan(&v.ID, &v.Version, &v.Sequence, &v.Security, &v.Channel, &v.Platform, &v.Arch, &v.Hardware, &v.SHA256, &v.Size, &v.Payload, &v.Signature, &v.Notes, &v.Published, &v.Created)
+	e := s.Scan(&v.ID, &v.Version, &v.Sequence, &v.Security, &v.Channel, &v.Platform, &v.Arch, &v.Hardware, &v.SHA256, &v.Size, &v.Payload, &v.Signature, &v.Notes, &v.Published, &v.Created, &v.FileName, &v.PackageKind, &v.BaseVersion, &v.TargetPath, &v.UploadedBy, &v.PublishedBy, &v.PublishedAt)
 	v.Download = fmt.Sprintf("/api/v1/artifacts/%d", v.ID)
 	return v, e
 }
@@ -116,8 +132,8 @@ func (a *App) compatible(pid int64, key []byte, q url.Values, current, security 
 		if e != nil {
 			return nil, e
 		}
-		m, e := (protocol.Envelope{Payload: v.Payload, Signature: v.Signature}).Verify(key)
-		if e == nil && m.Expires > now() && m.MinSequence <= current {
+		m, e := releaseManifest(protocol.Envelope{Payload: v.Payload, Signature: v.Signature}, key)
+		if e == nil && m.Expires > now() && m.MinSequence <= current && (v.PackageKind != "file" || v.BaseVersion == q.Get("version")) {
 			return &v, nil
 		}
 	}
@@ -152,12 +168,12 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, (1<<30)+(64<<10))
 	mr, e := r.MultipartReader()
 	if e != nil {
-		fail(w, 400, "invalid_upload", "请使用 multipart 上传，顺序为 manifest、notes、file")
+		fail(w, 400, "invalid_upload", "请使用 multipart 上传，顺序为 metadata（或 manifest）、notes、file")
 		return
 	}
 	part, e := mr.NextPart()
-	if e != nil || part.FormName() != "manifest" {
-		fail(w, 400, "manifest_required", "首先提供签名 manifest")
+	if e != nil || (part.FormName() != "manifest" && part.FormName() != "metadata") {
+		fail(w, 400, "metadata_required", "首先提供版本信息 metadata（高级签名模式使用 manifest）")
 		return
 	}
 	b, e := io.ReadAll(io.LimitReader(part, 8193))
@@ -166,15 +182,29 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var env protocol.Envelope
-	if json.Unmarshal(b, &env) != nil {
-		fail(w, 400, "invalid_manifest", "签名清单 JSON 无效")
-		return
-	}
 	key, _ := hex.DecodeString(p.PublicKey)
-	m, e := env.Verify(key)
-	if e != nil || m.Project != p.Slug || m.Expires <= now() || m.Size > 1<<30 {
-		fail(w, 400, "invalid_signature", "签名、项目、有效期或文件大小不符合要求")
-		return
+	accountMode := part.FormName() == "metadata"
+	meta := releaseMetadata{Channel: "stable", Platform: "any", Arch: "any", Hardware: "any", PackageKind: "full"}
+	var m protocol.Manifest
+	if accountMode {
+		if len(key) != 0 {
+			fail(w, 400, "signature_required", "该项目开启高级签名，请上传签名清单，或由所有者在设置中关闭")
+			return
+		}
+		if json.Unmarshal(b, &meta) != nil || !meta.valid() {
+			fail(w, 400, "invalid_metadata", "版本信息无效；按文件更新需要填写适用旧版本和相对目标路径")
+			return
+		}
+	} else {
+		if json.Unmarshal(b, &env) != nil {
+			fail(w, 400, "invalid_manifest", "签名清单 JSON 无效")
+			return
+		}
+		m, e = env.Verify(key)
+		if e != nil || m.Project != p.Slug || m.Expires <= now() || m.Size > 1<<30 {
+			fail(w, 400, "invalid_signature", "签名、项目、有效期或文件大小不符合要求")
+			return
+		}
 	}
 	part, e = mr.NextPart()
 	notes := ""
@@ -191,6 +221,11 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "file_required", "缺少固件文件")
 		return
 	}
+	filename := part.FileName()
+	if !validPackagePath(filename) || strings.Contains(filename, "/") {
+		fail(w, 400, "invalid_filename", "文件名无效，请使用普通文件名")
+		return
+	}
 	f, e := os.CreateTemp(filepath.Join(a.Data, "artifacts"), ".upload-")
 	if e != nil {
 		fail(w, 507, "storage_error", "无法写入固件存储")
@@ -201,10 +236,18 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 	_ = f.Chmod(0600)
 	h := sha256.New()
-	n, e := io.Copy(io.MultiWriter(f, h), io.LimitReader(part, m.Size+1))
-	if e != nil || n != m.Size || hex.EncodeToString(h.Sum(nil)) != m.SHA256 {
+	maxSize := m.Size
+	if accountMode {
+		maxSize = 1 << 30
+	}
+	n, e := io.Copy(io.MultiWriter(f, h), io.LimitReader(part, maxSize+1))
+	actualHash := hex.EncodeToString(h.Sum(nil))
+	if e != nil || n < 1 || n > maxSize || (!accountMode && (n != m.Size || actualHash != m.SHA256)) {
 		fail(w, 400, "integrity_error", "文件大小或 SHA-256 与签名清单不一致")
 		return
+	}
+	if accountMode {
+		m = protocol.Manifest{Project: p.Slug, Version: meta.Version, Sequence: meta.Sequence, Security: 0, Channel: meta.Channel, Platform: meta.Platform, Arch: meta.Arch, Hardware: meta.Hardware, SHA256: actualHash, Size: n, Expires: 253402300799}
 	}
 	if _, e = mr.NextPart(); e != io.EOF {
 		fail(w, 400, "unexpected_part", "上传包含额外字段")
@@ -221,13 +264,43 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	res, e := a.DB.Exec("INSERT INTO releases(project_id,version,sequence,security,channel,platform,arch,hardware,sha256,size,payload,signature,notes,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", id, m.Version, m.Sequence, m.Security, m.Channel, m.Platform, m.Arch, m.Hardware, m.SHA256, m.Size, env.Payload, env.Signature, notes, now())
+	tx, e := a.DB.Begin()
+	if e != nil {
+		fail(w, 500, "database_error", "保存版本失败")
+		return
+	}
+	defer tx.Rollback()
+	if accountMode {
+		if m.Sequence == 0 {
+			if tx.QueryRow("SELECT COALESCE(MAX(sequence),0)+1 FROM releases WHERE project_id=?", id).Scan(&m.Sequence) != nil {
+				fail(w, 500, "database_error", "生成发布序号失败")
+				return
+			}
+		}
+		payload, err := m.Bytes()
+		if err != nil {
+			fail(w, 400, "invalid_metadata", "版本信息无效")
+			return
+		}
+		env.Payload = base64.StdEncoding.EncodeToString(payload)
+	}
+	res, e := tx.Exec("INSERT INTO releases(project_id,version,sequence,security,channel,platform,arch,hardware,sha256,size,payload,signature,notes,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", id, m.Version, m.Sequence, m.Security, m.Channel, m.Platform, m.Arch, m.Hardware, m.SHA256, m.Size, env.Payload, env.Signature, notes, now())
 	if e != nil {
 		fail(w, 409, "release_exists", "版本或发布序号已存在，已发布文件不能覆盖")
 		return
 	}
 	rid, _ := res.LastInsertId()
-	a.audit(u.ID, p.Slug, "release.upload")
+	_, e = tx.Exec("INSERT INTO release_info(release_id,uploader_id,file_name,package_kind,base_version,target_path) VALUES(?,?,?,?,?,?)", rid, u.ID, filename, meta.PackageKind, meta.BaseVersion, meta.TargetPath)
+	if e == nil {
+		_, e = tx.Exec("INSERT INTO audit(user_id,project,action,at) VALUES(?,?,?,?)", u.ID, p.Slug, fmt.Sprintf("release.upload id=%d version=%s", rid, m.Version), now())
+	}
+	if e == nil {
+		e = tx.Commit()
+	}
+	if e != nil {
+		fail(w, 500, "database_error", "保存发布记录失败")
+		return
+	}
 	jsonOut(w, 201, map[string]int64{"id": rid})
 }
 func (a *App) publish(w http.ResponseWriter, r *http.Request) {
@@ -242,13 +315,17 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Published bool `json:"published"`
+		Published       bool   `json:"published"`
+		PublishPassword string `json:"publish_password,omitempty"`
 	}
 	if readJSON(w, r, &in) != nil {
 		fail(w, 400, "invalid_request", "参数错误")
 		return
 	}
 	p, _ := a.project(pid)
+	if in.Published && !a.checkPublishPassword(w, r, u, pid, in.PublishPassword) {
+		return
+	}
 	tx, e := a.DB.Begin()
 	if e != nil {
 		fail(w, 500, "database_error", "发布失败")
@@ -267,9 +344,16 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Published {
 		key, _ := hex.DecodeString(p.PublicKey)
-		m, e := (protocol.Envelope{Payload: payload, Signature: sig}).Verify(key)
+		m, e := releaseManifest(protocol.Envelope{Payload: payload, Signature: sig}, key)
 		if e != nil || m.Expires <= now() {
 			fail(w, 400, "expired_manifest", "签名清单已失效，请重新发布新版本")
+			return
+		}
+	}
+	if in.Published {
+		_, e = tx.Exec("INSERT INTO release_info(release_id,publisher_id,published_at) VALUES(?,?,?) ON CONFLICT(release_id) DO UPDATE SET publisher_id=excluded.publisher_id,published_at=excluded.published_at", rid, u.ID, now())
+		if e != nil {
+			fail(w, 500, "database_error", "保存发布署名失败")
 			return
 		}
 	}
@@ -292,11 +376,11 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	} else {
 		_, _ = tx.Exec("UPDATE outbox SET state='cancelled',error='release withdrawn' WHERE release_id=? AND state='pending'", rid)
 	}
-	if tx.Commit() != nil {
+	_, e = tx.Exec("INSERT INTO audit(user_id,project,action,at) VALUES(?,?,?,?)", u.ID, p.Slug, fmt.Sprintf("release.publish id=%d published=%t", rid, in.Published), now())
+	if e != nil || tx.Commit() != nil {
 		fail(w, 500, "database_error", "发布失败")
 		return
 	}
-	a.audit(u.ID, p.Slug, "release.publish="+strconv.FormatBool(in.Published))
 	jsonOut(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) download(w http.ResponseWriter, r *http.Request) {
@@ -311,8 +395,8 @@ func (a *App) download(w http.ResponseWriter, r *http.Request) {
 	rid := pathID(r)
 	var pid int64
 	var published bool
-	var hash, version string
-	if a.DB.QueryRow("SELECT project_id,published,sha256,version FROM releases WHERE id=?", rid).Scan(&pid, &published, &hash, &version) != nil {
+	var hash, version, filename string
+	if a.DB.QueryRow("SELECT project_id,published,sha256,version,COALESCE((SELECT file_name FROM release_info WHERE release_id=releases.id),'firmware.bin') FROM releases WHERE id=?", rid).Scan(&pid, &published, &hash, &version, &filename) != nil {
 		fail(w, 404, "not_found", "文件不存在")
 		return
 	}
@@ -345,11 +429,34 @@ func (a *App) download(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", `"`+hash+`"`)
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.bin"`, p.Slug, version))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Cache-Control", "private, no-cache")
 	http.ServeContent(w, r, version, st.ModTime(), f)
 }
 func (a *App) public(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("slug") == "" {
+		rows, e := a.DB.Query("SELECT slug,name,description FROM projects WHERE public=1 ORDER BY name LIMIT 500")
+		if e != nil {
+			fail(w, 500, "database_error", "读取公开项目失败")
+			return
+		}
+		defer rows.Close()
+		out := []map[string]string{}
+		for rows.Next() {
+			var slug, name, description string
+			if rows.Scan(&slug, &name, &description) != nil {
+				fail(w, 500, "database_error", "读取失败")
+				return
+			}
+			out = append(out, map[string]string{"slug": slug, "name": name, "description": description})
+		}
+		if rows.Err() != nil {
+			fail(w, 500, "database_error", "读取失败")
+			return
+		}
+		jsonOut(w, 200, out)
+		return
+	}
 	var id int64
 	if a.DB.QueryRow("SELECT id FROM projects WHERE slug=? AND public=1", r.PathValue("slug")).Scan(&id) != nil {
 		fail(w, 404, "not_found", "公开项目不存在")
@@ -410,7 +517,7 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 	// Keep MCU metadata bounded: release notes belong in the history endpoint.
 	var compact any
 	if chosen != nil {
-		compact = map[string]any{"id": chosen.ID, "version": chosen.Version, "sequence": chosen.Sequence, "security": chosen.Security, "size": chosen.Size, "sha256": chosen.SHA256, "payload": chosen.Payload, "signature": chosen.Signature, "download": chosen.Download}
+		compact = map[string]any{"id": chosen.ID, "version": chosen.Version, "sequence": chosen.Sequence, "security": chosen.Security, "size": chosen.Size, "sha256": chosen.SHA256, "payload": chosen.Payload, "signature": chosen.Signature, "download": chosen.Download, "file_name": chosen.FileName, "package_kind": chosen.PackageKind, "base_version": chosen.BaseVersion, "target_path": chosen.TargetPath, "published_by": chosen.PublishedBy}
 	}
 	jsonOut(w, 200, map[string]any{"update": available, "release": compact, "telemetry": map[string]any{"enabled": global && p.Telemetry && d.Valid, "interval_seconds": p.Heartbeat}, "server_time": time.Now().Unix()})
 }

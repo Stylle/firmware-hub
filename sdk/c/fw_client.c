@@ -61,20 +61,17 @@ static int valid_policy(const fw_policy *p) {
            identifier(p->arch) && identifier(p->hardware);
 }
 
-fw_result fw_verify_manifest(const uint8_t *payload, size_t length, const uint8_t signature[64],
-                             const uint8_t key[32], const fw_policy *p, fw_ed25519_verify_fn verify,
-                             void *ctx, fw_manifest *out) {
+fw_result fw_accept_server_manifest(const uint8_t *payload, size_t length, const fw_policy *p,
+                                    fw_manifest *out) {
     char buf[FW_PAYLOAD_MAX + 1], *fields[13];
     size_t i, start = 0, count = 0;
     fw_manifest m;
     if (out)
         memset(out, 0, sizeof(*out));
-    if (!payload || !signature || !key || !out || !verify || !valid_policy(p) || !p->maximum_size)
+    if (!payload || !out || !valid_policy(p) || !p->maximum_size)
         return FW_INVALID_ARGUMENT;
     if (length == 0 || length > FW_PAYLOAD_MAX || payload[length - 1] != '\n')
         return FW_FORMAT_ERROR;
-    if (verify(ctx, key, signature, payload, length) != 0)
-        return FW_SIGNATURE_ERROR;
     memcpy(buf, payload, length);
     buf[length] = 0;
     for (i = 0; i < length; i++) {
@@ -124,6 +121,19 @@ fw_result fw_verify_manifest(const uint8_t *payload, size_t length, const uint8_
     *out = m;
     return FW_OK;
 }
+fw_result fw_verify_manifest(const uint8_t *payload, size_t length, const uint8_t signature[64],
+                             const uint8_t key[32], const fw_policy *p, fw_ed25519_verify_fn verify,
+                             void *ctx, fw_manifest *out) {
+    if (out)
+        memset(out, 0, sizeof(*out));
+    if (!payload || !signature || !key || !out || !verify || !valid_policy(p) || !p->maximum_size)
+        return FW_INVALID_ARGUMENT;
+    if (length == 0 || length > FW_PAYLOAD_MAX || payload[length - 1] != '\n')
+        return FW_FORMAT_ERROR;
+    if (verify(ctx, key, signature, payload, length) != 0)
+        return FW_SIGNATURE_ERROR;
+    return fw_accept_server_manifest(payload, length, p, out);
+}
 fw_result fw_verify_artifact(const fw_manifest *m, const uint8_t actual[32], uint64_t size) {
     unsigned diff = 0;
     size_t i;
@@ -150,16 +160,20 @@ fw_result fw_make_check_path(const fw_policy *p, char *out, size_t capacity) {
     int n;
     if (!out || !capacity || !valid_policy(p))
         return FW_INVALID_ARGUMENT;
-    char channel[193], platform[193], arch[193], hardware[193];
+    char channel[193], platform[193], arch[193], hardware[193], version[193];
+    if (p->current_version && !identifier(p->current_version))
+        return FW_INVALID_ARGUMENT;
     query_id(channel, p->channel);
     query_id(platform, p->platform);
     query_id(arch, p->arch);
     query_id(hardware, p->hardware);
-    n = snprintf(out, capacity,
-                 "/api/v1/update/%s/"
-                 "check?channel=%s&platform=%s&arch=%s&hardware=%s&sequence=%llu&security=%llu",
-                 p->project, channel, platform, arch, hardware,
-                 (unsigned long long)p->current_sequence, (unsigned long long)p->minimum_security);
+    query_id(version, p->current_version ? p->current_version : "");
+    n = snprintf(
+        out, capacity,
+        "/api/v1/update/%s/"
+        "check?channel=%s&platform=%s&arch=%s&hardware=%s&sequence=%llu&security=%llu&version=%s",
+        p->project, channel, platform, arch, hardware, (unsigned long long)p->current_sequence,
+        (unsigned long long)p->minimum_security, version);
     return n < 0 || (size_t)n >= capacity ? FW_BUFFER_TOO_SMALL : FW_OK;
 }
 fw_result fw_check(const fw_policy *p, fw_http_fn http, void *ctx, char *response, size_t capacity,

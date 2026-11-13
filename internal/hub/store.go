@@ -20,7 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 type App struct {
 	DB            *sql.DB
@@ -138,6 +138,12 @@ func now() int64             { return time.Now().Unix() }
 func (a *App) audit(uid int64, project, action string) {
 	_, _ = a.DB.Exec("INSERT INTO audit(user_id,project,action,at) VALUES(?,?,?,?)", uid, project, action, now())
 }
+func (a *App) auditProject(uid, pid int64, action string) {
+	var slug string
+	if a.DB.QueryRow("SELECT slug FROM projects WHERE id=?", pid).Scan(&slug) == nil {
+		a.audit(uid, slug, action)
+	}
+}
 
 const schema = `
 PRAGMA journal_mode=WAL;
@@ -155,4 +161,12 @@ CREATE TABLE IF NOT EXISTS devices(id INTEGER PRIMARY KEY,project_id INTEGER NOT
 CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,webhook TEXT NOT NULL DEFAULT '',webhook_secret TEXT NOT NULL DEFAULT '',telegram_token TEXT NOT NULL DEFAULT '',telegram_chat TEXT NOT NULL DEFAULT '',mqtt_url TEXT NOT NULL DEFAULT '',mqtt_user TEXT NOT NULL DEFAULT '',mqtt_password TEXT NOT NULL DEFAULT '',mqtt_topic TEXT NOT NULL DEFAULT '',allow_private INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS outbox(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL,release_id INTEGER NOT NULL,kind TEXT NOT NULL,event TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,project TEXT NOT NULL,action TEXT NOT NULL,at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS project_security(project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,publish_password TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS release_info(release_id INTEGER PRIMARY KEY REFERENCES releases(id) ON DELETE CASCADE,uploader_id INTEGER REFERENCES users(id),publisher_id INTEGER REFERENCES users(id),published_at INTEGER NOT NULL DEFAULT 0,file_name TEXT NOT NULL DEFAULT 'download.bin',package_kind TEXT NOT NULL DEFAULT 'full',base_version TEXT NOT NULL DEFAULT '',target_path TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS login_history(id INTEGER PRIMARY KEY,user_id INTEGER REFERENCES users(id),name TEXT NOT NULL,success INTEGER NOT NULL,reason TEXT NOT NULL,peer TEXT NOT NULL,agent TEXT NOT NULL,at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS session_info(hash TEXT PRIMARY KEY REFERENCES sessions(hash) ON DELETE CASCADE,id TEXT NOT NULL UNIQUE,created INTEGER NOT NULL,last_seen INTEGER NOT NULL,peer TEXT NOT NULL,agent TEXT NOT NULL);
+-- Public management IDs are not login tokens. Existing sessions remain usable
+-- across this additive migration, with unknown pre-upgrade client metadata.
+INSERT OR IGNORE INTO session_info(hash,id,created,last_seen,peer,agent) SELECT hash,lower(hex(randomblob(16))),expires-604800,0,'升级前会话','未知（升级前）' FROM sessions WHERE expires>strftime('%s','now');
+CREATE INDEX IF NOT EXISTS login_history_user ON login_history(user_id,id DESC);
 `

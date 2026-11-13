@@ -29,10 +29,15 @@ jobs:
       - name: Native Qt build
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y qtbase5-dev qt5-qmake
+          sudo apt-get install -y qtbase5-dev qt5-qmake libqt5serialport5-dev
           mkdir -p build/qt
           cd build/qt
           qmake ../../examples/qt/hub-demo.pro
+          make -j2
+          cd ..
+          mkdir serial
+          cd serial
+          qmake ../../examples/rs485-bridge/serial-bridge.pro
           make -j2
       - name: Build and verify container
         run: |

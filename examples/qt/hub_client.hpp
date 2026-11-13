@@ -20,8 +20,9 @@ class HubClient : public QObject {
   public:
     struct Config {
         QUrl base;
-        QByteArray token, publicKey;
-        QString trustedCAFile; /**< Optional explicit local CA; never fetched from Hub. */
+        QByteArray token, publicKey; /**< Empty publicKey selects account/HTTPS mode locally.
+                                        Nonempty always requires a valid signature. */
+        QString trustedCAFile;       /**< Optional explicit local CA; never fetched from Hub. */
         QString project, version = "0.0.0", platform = "any", arch = "any", hardware = "any",
                          channel = "stable";
         quint64 sequence = 0, security = 0;
@@ -40,6 +41,13 @@ class HubClient : public QObject {
     void setTelemetry(bool enabled);
     /** Send a heartbeat only after local and Hub permission are both known. */
     void heartbeat();
+    /** Build a LOCAL desktop install plan only after verified download. The caller
+     * chooses the application directory and invokes the separate update helper
+     * after the main program exits. No remote command is executed. */
+    QJsonObject installationPlan(const QString &downloadedFile,
+                                 const QString &applicationDirectory) const;
+    /** Metadata for an explicitly integrated serial bridge; empty for ZIP/file updates. */
+    QJsonObject deviceImage(const QString &downloadedFile) const;
     bool busy() const {
         return !active_.isNull() || !downloadJob_.isNull();
     }
@@ -63,6 +71,8 @@ class HubClient : public QObject {
     QTimer heartbeat_;
     fw_manifest manifest_{};
     QString downloadPath_;
+    QJsonObject package_;
+    QString downloadedFile_;
     bool hubTelemetry_ = false;
     quint64 epoch_ = 0;
 };

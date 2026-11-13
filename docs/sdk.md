@@ -7,15 +7,16 @@
 - `examples/qt/hub_client.hpp/.cpp`：Qt 异步 HTTP(S) 适配与心跳。
 - `examples/qt/download_task.hpp`：受控流式下载、最多 3 次同进程 Range 续传。
 - `sdk/third_party`：原样保留的 Monocypher Ed25519 验签后端与许可证。
+- `sdk/rs485/fw485.h/.c`：FH485/1 有界帧、顺序、重复包 ACK、暂存和校验状态机；不假设现有厂商协议。
 
 公共接口采用 Doxygen 注释，说明参数、所有权、返回值、默认行为与安全前置条件。SDK 不持有私钥，不自动重启或执行安装脚本。
 
 ## MCU 接入顺序
 
-1. 预置项目、型号及可信公钥；准备可信时钟、持久化安全状态。
+1. 预置项目、型号、更新模式；准备可信时钟、持久化版本状态。高级模式还需可信公钥。
 2. 实现 `fw_http_fn`：TLS、域名验证、限时、响应上限、鉴权和重定向策略。
 3. 调用 `fw_check`，用平台 JSON 库提取并严格解码 `release.payload/signature`。
-4. 调用 `fw_verify_manifest`。失败立即停止，不自动降级到不验签。
+4. 高级模式调用 `fw_verify_manifest`；账号模式显式调用 `fw_accept_server_manifest`，表示信任 HTTPS Hub 而非离线发布密钥。失败立即停止，绝不能在验签失败后自动改用账号模式。
 5. 按签名的大小限制流式下载，逐块计算 SHA-256，不将大文件完整放进内存。
 6. 调用 `fw_verify_artifact`。通过后才能交给型号专用安装适配器。
 7. 按 Bootloader 的规则安装、启动自检、确认或恢复；适时持久化版本与安全计数。
@@ -52,13 +53,15 @@ Windows MinGW 使用 `mingw32-make`。工程设置 `object_parallel_to_source`�
 
 界面配置服务地址、项目、公钥、设备凭据、当前版本与型号。设备凭据不持久化；非敏感配置及防回放状态使用 QSettings 保存。测试可用 `FH_STATE_DIR` 指定独立本地状态目录。
 
+公钥留空即本地选择账号模式；设备/软件当前版本通过 `fw_policy.current_version` 传递，用于单文件包的旧版本匹配。C++ 封装的 `acceptServerManifest` 具有同样的显式信任边界。
+
 本地示例可使用“导入连接配置”选择 `scripts/seed-demo.mjs` 生成的 `.local/demo.json`。该文件包含设备访问凭据，不要上传 Git 或对外分享。防回放状态按项目、公钥、通道和设备类别隔离，不因更换同一项目的服务器地址而重置。
 
-Qt 下载先验证签名和兼容性，再写入 QSaveFile，完整摘要校验通过才原子提交。取消、TLS 失败或摘要不符不会替换原目标文件。网络中断时固定已验证文件的 ETag 和已收字节续传；进程退出后不保留可恢复下载任务。
+Qt 下载按本地模式验证元数据和兼容性，再写入 QSaveFile，完整摘要校验通过才原子提交。取消、TLS 失败或摘要不符不会替换原目标文件。网络中断时固定文件 ETag 和已收字节续传；进程退出后不保留可恢复下载任务。
 
 Qt 示例不跟随下载重定向，不把 Token 发往其他源。HTTP 仅允许回环测试；HTTPS 校验证书与主机名。私有 CA 可在集成时设置 `Config.trustedCAFile`；测试模式支持 `FH_CA_FILE`，不信任从 Hub 下载的 CA，不调用 `ignoreSslErrors()`。
 
-下载成功不改变“当前已安装版本”。示例不实际刷机，也不会伪造启动确认。真实设备的固件切换和确认须由安装适配器实现。
+下载成功不改变“当前已安装版本”。Windows 软件安装使用独立 `update-agent`，见[桌面更新](desktop-updates.md)。GUI 可展开最小 N32G452 示例面板，调用独立 Qt SerialPort 工具读取实际版本或显式传输；只有首次烧录了新示例 Bootloader 的板卡才能使用。它不会伪造真实硬件启动确认，见[串口适配](rs485.md)。
 
 ## 自动验证
 

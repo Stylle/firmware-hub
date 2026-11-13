@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <QSettings>
@@ -40,6 +41,8 @@ bool HubClient::configure(const Config &c) {
     config_ = c;
     hubTelemetry_ = false;
     downloadPath_.clear();
+    package_ = QJsonObject();
+    downloadedFile_.clear();
     return true;
 }
 void HubClient::setTelemetry(bool enabled) {
@@ -112,6 +115,8 @@ void HubClient::check() {
     p.arch = arch.constData();
     p.hardware = hardware.constData();
     p.current_sequence = config_.sequence;
+    QByteArray installedVersion = config_.version.toUtf8();
+    p.current_version = installedVersion.constData();
     p.minimum_security = config_.security;
     firmware::Client sdk(p);
     const std::string path = sdk.checkPath();
@@ -170,12 +175,20 @@ void HubClient::consumeCheck(const QByteArray &data) {
     } else
         heartbeat_.stop();
     downloadPath_.clear();
+    package_ = QJsonObject();
+    downloadedFile_.clear();
     if (!root.value("update").toBool(false)) {
         emit message("没有符合条件的新版本");
         emit checked(false);
         return;
     }
     auto release = root.value("release").toObject();
+    const QString kind = release.value("package_kind").toString("full");
+    if ((kind != "full" && kind != "file") ||
+        (kind == "file" && release.value("base_version").toString() != config_.version)) {
+        emit failed("更新方式或适用旧版本不匹配");
+        return;
+    }
     QByteArray payloadB64 = release.value("payload").toString().toLatin1();
     QByteArray payload = QByteArray::fromBase64(payloadB64);
     if (payload.toBase64() != payloadB64) {
@@ -183,8 +196,9 @@ void HubClient::consumeCheck(const QByteArray &data) {
         return;
     }
     QByteArray signature, key;
-    if (!hexBytes(release.value("signature").toString().toLatin1(), 64, signature) ||
-        !hexBytes(config_.publicKey, 32, key)) {
+    const bool signedMode = !config_.publicKey.isEmpty();
+    if (signedMode && (!hexBytes(release.value("signature").toString().toLatin1(), 64, signature) ||
+                       !hexBytes(config_.publicKey, 32, key))) {
         emit failed("签名或本地公钥格式无效");
         return;
     }
@@ -208,10 +222,15 @@ void HubClient::consumeCheck(const QByteArray &data) {
                                                     QCryptographicHash::Sha256)
                                .toHex());
     p.highest_seen_sequence = state.value(stateKey, 0).toULongLong();
-    auto result = fw_verify_manifest(
-        reinterpret_cast<const uint8_t *>(payload.constData()), static_cast<size_t>(payload.size()),
-        reinterpret_cast<const uint8_t *>(signature.constData()),
-        reinterpret_cast<const uint8_t *>(key.constData()), &p, verifyEd25519, nullptr, &manifest_);
+    auto result =
+        signedMode
+            ? fw_verify_manifest(reinterpret_cast<const uint8_t *>(payload.constData()),
+                                 static_cast<size_t>(payload.size()),
+                                 reinterpret_cast<const uint8_t *>(signature.constData()),
+                                 reinterpret_cast<const uint8_t *>(key.constData()), &p,
+                                 verifyEd25519, nullptr, &manifest_)
+            : fw_accept_server_manifest(reinterpret_cast<const uint8_t *>(payload.constData()),
+                                        static_cast<size_t>(payload.size()), &p, &manifest_);
     if (result != FW_OK) {
         emit failed(QString::fromLatin1(fw_result_string(result)));
         return;
@@ -230,7 +249,10 @@ void HubClient::consumeCheck(const QByteArray &data) {
         return;
     }
     downloadPath_ = path;
-    emit message("签名、型号、时间与安全版本检查通过");
+    package_ = release;
+    emit message(signedMode
+                     ? "数字签名、兼容范围与版本检查通过"
+                     : "账号发布模式：兼容范围与版本检查通过，下载后校验 SHA-256（不是数字签名）");
     emit candidate(QString::fromLatin1(manifest_.version), manifest_.size);
     emit checked(true);
 }
@@ -247,12 +269,47 @@ void HubClient::download(const QString &destination) {
     job->onFinished = [this](bool ok, const QString &text) {
         active_.clear();
         downloadJob_.clear();
-        if (ok)
+        if (ok) {
+            downloadedFile_ = QFileInfo(text).absoluteFilePath();
             emit downloaded(text);
-        else
+        } else
             emit failed(text);
     };
     job->begin();
+}
+QJsonObject HubClient::installationPlan(const QString &downloaded, const QString &directory) const {
+    if (downloadedFile_.isEmpty() || QFileInfo(downloaded).absoluteFilePath() != downloadedFile_ ||
+        package_.isEmpty())
+        return {};
+    const QString kind = package_.value("package_kind").toString("full");
+    if (kind == "full" &&
+        !package_.value("file_name").toString().endsWith(".zip", Qt::CaseInsensitive))
+        return {};
+    return {
+        {"source", downloadedFile_},
+        {"install_dir", QFileInfo(directory).absoluteFilePath()},
+        {"sha256", QString::fromLatin1(
+                       QByteArray(reinterpret_cast<const char *>(manifest_.sha256), 32).toHex())},
+        {"size", static_cast<qint64>(manifest_.size)},
+        {"project", config_.project},
+        {"version", QString::fromLatin1(manifest_.version)},
+        {"sequence", static_cast<qint64>(manifest_.sequence)},
+        {"current_version", config_.version},
+        {"package_kind", kind},
+        {"base_version", package_.value("base_version").toString()},
+        {"target_path", package_.value("target_path").toString()}};
+}
+QJsonObject HubClient::deviceImage(const QString &downloaded) const {
+    if (downloadedFile_.isEmpty() || QFileInfo(downloaded).absoluteFilePath() != downloadedFile_ ||
+        !package_.value("file_name").toString().endsWith(".bin", Qt::CaseInsensitive) ||
+        package_.value("package_kind").toString("full") != "full")
+        return {};
+    return {
+        {"source", downloadedFile_},
+        {"sha256", QString::fromLatin1(
+                       QByteArray(reinterpret_cast<const char *>(manifest_.sha256), 32).toHex())},
+        {"version", QString::fromLatin1(manifest_.version)},
+        {"hardware", config_.hardware}};
 }
 void HubClient::cancel() {
     if (downloadJob_)

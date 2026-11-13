@@ -1,0 +1,11 @@
+QT += core serialport
+QT -= gui
+CONFIG += console c++17
+CONFIG -= app_bundle
+TEMPLATE = app
+TARGET = firmware-hub-serial
+INCLUDEPATH += ../../sdk/rs485
+SOURCES += main.cpp ../../sdk/rs485/fw485.c
+HEADERS += ../../sdk/rs485/fw485.h
+QMAKE_CXXFLAGS += -Wall -Wextra
+QMAKE_CFLAGS += -Wall -Wextra

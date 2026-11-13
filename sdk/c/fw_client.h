@@ -4,8 +4,9 @@
  * @details No socket, heap allocation, flash write, or private key is hidden in
  * this module. The application owns transport, trusted public key, clock,
  * persistent anti-rollback counters and the bootloader integration.
- * @warning FH1 is not a TUF/SUIT implementation. TLS and a valid SHA-256 alone
- * are insufficient: call fw_verify_manifest() and fw_verify_artifact().
+ * @warning FH1 is not TUF/SUIT. Account mode trusts the authenticated Hub over
+ * TLS, not an offline publisher key. Signed mode additionally authenticates the
+ * publisher and must never silently fall back to account mode.
  */
 #ifndef FW_CLIENT_H
 #define FW_CLIENT_H
@@ -51,6 +52,7 @@ typedef struct {
     uint64_t maximum_size;          /**< Available slot/file capacity; must be nonzero. */
     int telemetry_enabled;          /**< Local opt-in. Default zero; no report is sent. */
     int hub_telemetry_enabled;      /**< Last check response; default zero. */
+    const char *current_version;    /**< Optional installed version; required for file updates. */
 } fw_policy;
 
 /** Ed25519 backend. Return 0 only for a valid standard Ed25519 signature.
@@ -79,8 +81,19 @@ fw_result fw_verify_manifest(const uint8_t *payload, size_t length, const uint8_
                              const uint8_t trusted_key[32], const fw_policy *policy,
                              fw_ed25519_verify_fn verify, void *crypto_ctx, fw_manifest *out);
 
+/** Explicit ACCOUNT MODE: validate metadata received from a trusted HTTPS Hub.
+ * Enforces format/compatibility/size/version/clock, but performs NO signature
+ * verification. The caller must choose this mode locally, never from a server
+ * suggestion or as fallback after a failed signature. A compromised Hub can
+ * provide malicious files and matching hashes in this mode.
+ * @return FW_OK only for structurally valid, compatible, newer metadata.
+ */
+fw_result fw_accept_server_manifest(const uint8_t *payload, size_t length, const fw_policy *policy,
+                                    fw_manifest *out);
+
 /** Compare the digest and exact length of a fully downloaded artifact.
- * @warning A digest is trusted only after verifying its manifest signature.
+ * @warning A digest only detects corruption; its authority depends on the
+ * explicitly chosen signed or trusted-server metadata mode.
  */
 fw_result fw_verify_artifact(const fw_manifest *manifest, const uint8_t actual_sha256[32],
                              uint64_t actual_size);

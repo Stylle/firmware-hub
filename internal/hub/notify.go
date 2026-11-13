@@ -121,7 +121,7 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "database_error", "保存失败")
 		return
 	}
-	a.audit(u.ID, "", "notification.update")
+	a.auditProject(u.ID, pid, "notification.update")
 	jsonOut(w, 200, map[string]bool{"ok": true})
 }
 

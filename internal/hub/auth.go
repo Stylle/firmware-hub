@@ -82,6 +82,9 @@ func (a *App) current(r *http.Request) (user, error) {
 		return u, e
 	}
 	e = a.DB.QueryRow("SELECT u.id,u.name,u.admin,s.csrf FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.expires>?", digest(c.Value), now()).Scan(&u.ID, &u.Name, &u.Admin, &u.CSRF)
+	if e == nil {
+		_, _ = a.DB.Exec("UPDATE session_info SET last_seen=? WHERE hash=? AND last_seen<?", now(), digest(c.Value), now()-60)
+	}
 	return u, e
 }
 func (a *App) require(w http.ResponseWriter, r *http.Request) (user, bool) {
@@ -191,10 +194,12 @@ func (a *App) auth(w http.ResponseWriter, r *http.Request) {
 	}
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password))
 	if e != nil || err != nil {
+		a.recordLogin(r, u.ID, in.Name, false, "invalid_credentials")
 		fail(w, 401, "invalid_login", "账号或密码不正确")
 		return
 	}
 	if !a.loginMFA(u.ID, in.OTP) {
+		a.recordLogin(r, u.ID, u.Name, false, "invalid_otp")
 		fail(w, 401, "invalid_otp", "校验码无效或已使用，请等待新码并检查系统时间")
 		return
 	}
@@ -205,6 +210,13 @@ func (a *App) auth(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "database_error", "无法建立会话")
 		return
 	}
+	_, e = a.DB.Exec("INSERT INTO session_info(hash,id,created,last_seen,peer,agent) VALUES(?,?,?,?,?,?)", digest(token), randomToken(), now(), now(), requestPeer(r), shortText(r.UserAgent(), 256))
+	if e != nil {
+		_, _ = a.DB.Exec("DELETE FROM sessions WHERE hash=?", digest(token))
+		fail(w, 500, "database_error", "无法建立会话记录")
+		return
+	}
+	a.recordLogin(r, u.ID, u.Name, true, "ok")
 	http.SetCookie(w, &http.Cookie{Name: "fh_session", Value: token, Path: "/", MaxAge: 7 * 86400, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteStrictMode})
 	a.audit(u.ID, "", "login")
 	jsonOut(w, 200, map[string]any{"user": u})

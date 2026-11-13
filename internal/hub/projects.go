@@ -3,8 +3,10 @@ package hub
 import (
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Stylle/firmware-hub/internal/protocol"
@@ -12,21 +14,27 @@ import (
 )
 
 type project struct {
-	ID          int64  `json:"id"`
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Public      bool   `json:"public"`
-	Telemetry   bool   `json:"telemetry"`
-	Heartbeat   int    `json:"heartbeat"`
-	Timeout     int    `json:"timeout"`
-	PublicKey   string `json:"public_key"`
-	Role        string `json:"role"`
+	ID                 int64   `json:"id"`
+	Slug               string  `json:"slug"`
+	Name               string  `json:"name"`
+	Description        string  `json:"description"`
+	Public             bool    `json:"public"`
+	Telemetry          bool    `json:"telemetry"`
+	Heartbeat          int     `json:"heartbeat"`
+	Timeout            int     `json:"timeout"`
+	PublicKey          string  `json:"public_key"`
+	Role               string  `json:"role"`
+	HasPublishPassword bool    `json:"has_publish_password"`
+	PublishPassword    *string `json:"publish_password,omitempty"`
+	AccountPassword    string  `json:"account_password,omitempty"`
 }
 
 func (a *App) project(id int64) (project, error) {
 	var p project
 	e := a.DB.QueryRow("SELECT id,slug,name,description,public,telemetry,heartbeat,timeout,pubkey FROM projects WHERE id=?", id).Scan(&p.ID, &p.Slug, &p.Name, &p.Description, &p.Public, &p.Telemetry, &p.Heartbeat, &p.Timeout, &p.PublicKey)
+	if e == nil {
+		_ = a.DB.QueryRow("SELECT publish_password!='' FROM project_security WHERE project_id=?", id).Scan(&p.HasPublishPassword)
+	}
 	return p, e
 }
 func pathID(r *http.Request) int64 { n, _ := strconv.ParseInt(r.PathValue("id"), 10, 64); return n }
@@ -36,7 +44,7 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		rows, e := a.DB.Query("SELECT p.id,p.slug,p.name,p.description,p.public,p.telemetry,p.heartbeat,p.timeout,p.pubkey,CASE WHEN ? THEN 'owner' ELSE m.role END FROM projects p LEFT JOIN members m ON m.project_id=p.id AND m.user_id=? WHERE ? OR m.user_id=? ORDER BY p.id DESC", u.Admin, u.ID, u.Admin, u.ID)
+		rows, e := a.DB.Query("SELECT p.id,p.slug,p.name,p.description,p.public,p.telemetry,p.heartbeat,p.timeout,p.pubkey,CASE WHEN ? THEN 'owner' ELSE m.role END,COALESCE((SELECT publish_password!='' FROM project_security WHERE project_id=p.id),0) FROM projects p LEFT JOIN members m ON m.project_id=p.id AND m.user_id=? WHERE ? OR m.user_id=? ORDER BY p.id DESC", u.Admin, u.ID, u.Admin, u.ID)
 		if e != nil {
 			fail(w, 500, "database_error", "读取项目失败")
 			return
@@ -45,7 +53,7 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		out := []project{}
 		for rows.Next() {
 			var p project
-			if rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Description, &p.Public, &p.Telemetry, &p.Heartbeat, &p.Timeout, &p.PublicKey, &p.Role) != nil {
+			if rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Description, &p.Public, &p.Telemetry, &p.Heartbeat, &p.Timeout, &p.PublicKey, &p.Role, &p.HasPublishPassword) != nil {
 				fail(w, 500, "database_error", "读取项目失败")
 				return
 			}
@@ -56,9 +64,15 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 	}
 	var p project
 	if readJSON(w, r, &p) != nil || !validProject(p) {
-		fail(w, 400, "invalid_project", "请填写名称、英文项目标识、32 字节公钥，并检查心跳参数")
+		fail(w, 400, "invalid_project", "请填写名称、英文项目标识，并检查心跳参数；公钥可不填")
 		return
 	}
+	hash, e := hashPublishPassword(p.PublishPassword)
+	if e != nil {
+		fail(w, 400, "invalid_password", e.Error())
+		return
+	}
+	p.HasPublishPassword=hash!=""
 	tx, e := a.DB.Begin()
 	if e != nil {
 		fail(w, 500, "database_error", "创建失败")
@@ -72,6 +86,10 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 	}
 	p.ID, _ = res.LastInsertId()
 	_, e = tx.Exec("INSERT INTO members(project_id,user_id,role) VALUES(?,?,'owner')", p.ID, u.ID)
+	if e == nil && hash != "" {
+		_, e = tx.Exec("INSERT INTO project_security(project_id,publish_password) VALUES(?,?)", p.ID, hash)
+		p.HasPublishPassword = true
+	}
 	if e == nil {
 		e = tx.Commit()
 	}
@@ -81,11 +99,13 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 	}
 	a.audit(u.ID, p.Slug, "project.create")
 	p.Role = "owner"
+	p.PublishPassword = nil
+	p.AccountPassword = ""
 	jsonOut(w, 201, p)
 }
 func validProject(p project) bool {
 	k, e := hex.DecodeString(p.PublicKey)
-	return protocol.Identifier.MatchString(p.Slug) && len(p.Name) > 0 && utf8.RuneCountInString(p.Name) <= 100 && utf8.RuneCountInString(p.Description) <= 4000 && e == nil && len(k) == 32 && p.Heartbeat >= 15 && p.Heartbeat <= 86400 && p.Timeout >= p.Heartbeat*2 && p.Timeout <= 7*86400
+	return protocol.Identifier.MatchString(p.Slug) && len(p.Name) > 0 && utf8.RuneCountInString(p.Name) <= 100 && utf8.RuneCountInString(p.Description) <= 4000 && (p.PublicKey == "" || (e == nil && len(k) == 32)) && p.Heartbeat >= 15 && p.Heartbeat <= 86400 && p.Timeout >= p.Heartbeat*2 && p.Timeout <= 7*86400
 }
 func (a *App) updateProject(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
@@ -103,17 +123,52 @@ func (a *App) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p project
-	if readJSON(w, r, &p) != nil || !validProject(p) || p.Slug != old.Slug || p.PublicKey != old.PublicKey {
-		fail(w, 400, "immutable_trust", "项目标识和信任公钥不可在网页直接替换；密钥迁移需要客户端受控更新")
+	if readJSON(w, r, &p) != nil || !validProject(p) || p.Slug != old.Slug || (p.PublicKey != old.PublicKey && p.PublicKey != "") {
+		fail(w, 400, "immutable_trust", "项目标识和已有信任公钥不可替换；关闭签名须验证当前账号密码，原验签客户端不会自动降级")
 		return
 	}
-	_, e = a.DB.Exec("UPDATE projects SET name=?,description=?,public=?,telemetry=?,heartbeat=?,timeout=? WHERE id=?", p.Name, p.Description, p.Public, p.Telemetry, p.Heartbeat, p.Timeout, id)
+	securityChange := p.PublicKey != old.PublicKey || p.PublishPassword != nil
+	if securityChange && !a.reauthenticate(w, r, u, p.AccountPassword) {
+		return
+	}
+	hash, e := hashPublishPassword(p.PublishPassword)
+	if e != nil {
+		fail(w, 400, "invalid_password", e.Error())
+		return
+	}
+	tx, e := a.DB.Begin()
+	if e != nil {
+		fail(w, 500, "database_error", "保存失败")
+		return
+	}
+	defer tx.Rollback()
+	_, e = tx.Exec("UPDATE projects SET name=?,description=?,public=?,telemetry=?,heartbeat=?,timeout=?,pubkey=? WHERE id=?", p.Name, p.Description, p.Public, p.Telemetry, p.Heartbeat, p.Timeout, p.PublicKey, id)
+	if e == nil && p.PublishPassword != nil {
+		_, e = tx.Exec("INSERT INTO project_security(project_id,publish_password) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET publish_password=excluded.publish_password", id, hash)
+	}
+	if e == nil {
+		e = tx.Commit()
+	}
 	if e != nil {
 		fail(w, 500, "database_error", "保存失败")
 		return
 	}
 	a.audit(u.ID, p.Slug, "project.update")
+	if securityChange {
+		a.audit(u.ID, p.Slug, "project.release_security.update")
+	}
 	jsonOut(w, 200, map[string]bool{"ok": true})
+}
+
+func hashPublishPassword(password *string) (string, error) {
+	if password == nil || *password == "" {
+		return "", nil
+	}
+	if len(*password) < 12 || len(*password) > 72 || strings.TrimSpace(*password) == "" {
+		return "", fmt.Errorf("发布密码必须是 12–72 字节，留空表示不启用")
+	}
+	h, e := bcrypt.GenerateFromPassword([]byte(*password), 12)
+	return string(h), e
 }
 func (a *App) users(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.require(w, r)
@@ -220,7 +275,7 @@ func (a *App) members(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "database_error", "保存失败")
 		return
 	}
-	a.audit(u.ID, strconv.FormatInt(id, 10), "member.update")
+	a.auditProject(u.ID, id, "member.update")
 	jsonOut(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) settings(w http.ResponseWriter, r *http.Request) {

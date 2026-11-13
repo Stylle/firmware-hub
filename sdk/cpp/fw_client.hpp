@@ -21,6 +21,10 @@ class Client {
                      void *context, fw_manifest &out) const;
     /** Build a relative check URL; returns empty on invalid configuration. */
     std::string checkPath() const;
+    /** Explicit account mode: trusts HTTPS Hub metadata; not a digital signature. */
+    fw_result acceptServerManifest(const std::vector<uint8_t> &payload, fw_manifest &out) const {
+        return fw_accept_server_manifest(payload.data(), payload.size(), &policy_, &out);
+    }
     /** Change only local telemetry consent. This never enables Hub consent. */
     void setTelemetry(bool enabled) noexcept {
         policy_.telemetry_enabled = enabled ? 1 : 0;
