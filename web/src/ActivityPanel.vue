@@ -28,7 +28,8 @@ const sessions = ref<Session[]>([]),
   history = ref<Entry[]>([]),
   busy = ref(false),
   error = ref("");
-const date = (v: number) => new Date(v * 1000).toLocaleString();
+const date = (v: number) =>
+  Number.isFinite(v) && v > 0 ? new Date(v * 1000).toLocaleString() : "暂无记录";
 async function load() {
   busy.value = true;
   error.value = "";
