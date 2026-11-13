@@ -8,6 +8,8 @@ import (
 
 func (a *App) Handler(web fs.FS) http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /api/v1/backup", a.systemBackup)
+	m.HandleFunc("POST /api/v1/restore", a.systemBackup)
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if a.DB.Ping() != nil {
 			w.WriteHeader(503)
@@ -59,6 +61,10 @@ func (a *App) Handler(web fs.FS) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
+		}
+		if a.restoring.Load() && r.URL.Path != "/healthz" {
+			fail(w, 503, "restoring", "系统正在恢复，请稍后重新登录")
+			return
 		}
 		m.ServeHTTP(w, r)
 	})

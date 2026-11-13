@@ -11,18 +11,22 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Stylle/firmware-hub/internal/portablebackup"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	_ "modernc.org/sqlite"
 )
 
-const Version = "0.4.1"
+const Version = "0.5.0"
 
 type App struct {
+	Restart       chan struct{}
+	restoring     atomic.Bool
 	DB            *sql.DB
 	Data          string
 	box           cipher.AEAD
@@ -33,8 +37,14 @@ type App struct {
 }
 
 func Open(dir, username, password string) (*App, error) {
-	if err := os.MkdirAll(filepath.Join(dir, "artifacts"), 0700); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("data directory is not writable: %w", err)
+	}
+	if e := portablebackup.Apply(dir, backupSpec); e != nil {
+		return nil, e
+	}
+	if e := os.MkdirAll(filepath.Join(dir, "artifacts"), 0700); e != nil {
+		return nil, e
 	}
 	keyPath := filepath.Join(dir, "master.key")
 	key, err := os.ReadFile(keyPath)
@@ -71,7 +81,7 @@ func Open(dir, username, password string) (*App, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(1)
-	a := &App{DB: db, Data: dir, box: box, login: newLimiter(), authSlots: make(chan struct{}, 2), uploadSlots: make(chan struct{}, 2), downloadSlots: make(chan struct{}, 16)}
+	a := &App{Restart: make(chan struct{}), DB: db, Data: dir, box: box, login: newLimiter(), authSlots: make(chan struct{}, 2), uploadSlots: make(chan struct{}, 2), downloadSlots: make(chan struct{}, 16)}
 	if _, e = db.Exec(schema); e != nil {
 		db.Close()
 		return nil, e

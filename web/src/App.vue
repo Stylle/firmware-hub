@@ -2,6 +2,7 @@
 import { t } from "./i18n";
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
+import BackupPanel from "./BackupPanel.vue";
 import ActivityPanel from "./ActivityPanel.vue";
 import AppearanceControls from "./AppearanceControls.vue";
 import UiIcon from "./UiIcon.vue";
@@ -857,7 +858,7 @@ onUnmounted(() => {
         <p v-if="error" class="alert error" role="alert">{{ error }}</p>
         <p v-if="message" class="alert success" role="status">{{ message }}</p>
         <template v-if="section === 'system' && user.admin"
-          ><section class="card">
+          ><BackupPanel base="/api/v1" :csrf="user.csrf" /><section class="card">
             <h2>{{ t('状态采集总开关') }}</h2>
             <p class="muted">
               {{ t('关闭后，所有项目拒收设备心跳；已保存信息保留，可在各项目清除。') }}

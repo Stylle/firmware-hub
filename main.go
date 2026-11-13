@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +21,10 @@ import (
 var assets embed.FS
 
 func main() {
+	for runMain() {
+	}
+}
+func runMain() bool {
 	dir := os.Getenv("DATA_DIR")
 	if dir == "" {
 		dir = "data"
@@ -29,7 +34,7 @@ func main() {
 			log.Fatal(e)
 		}
 		fmt.Println("Administrator updated; previous sessions revoked.")
-		return
+		return false
 	}
 	a, e := hub.Open(dir, os.Getenv("USER"), os.Getenv("PASSWORD"))
 	if e != nil {
@@ -46,7 +51,7 @@ func main() {
 			log.Fatal(e)
 		}
 		fmt.Println("Backup saved:", out, "(contains credentials/master key; protect or encrypt offline)")
-		return
+		return false
 	}
 	web, _ := fs.Sub(assets, "web/dist")
 	addr := os.Getenv("LISTEN_ADDR")
@@ -55,16 +60,38 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go a.RunNotifications(ctx)
+	var workers sync.WaitGroup
+	workers.Add(1)
+	go func() { defer workers.Done(); a.RunNotifications(ctx) }()
+	defer workers.Wait()
 	s := &http.Server{Addr: addr, Handler: a.Handler(web), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 15 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
+		defer close(shutdownDone)
+		select {
+		case <-ctx.Done():
+		case <-a.Restart:
+			stop()
+		}
 		c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_ = s.Shutdown(c)
+		select {
+		case <-a.Restart:
+			_ = s.Shutdown(context.Background())
+		default:
+			_ = s.Shutdown(c)
+		}
 	}()
 	log.Printf("Firmware Hub %s listening on %s", hub.Version, addr)
 	if e = s.ListenAndServe(); e != http.ErrServerClosed {
 		log.Fatal(e)
+	}
+
+	<-shutdownDone
+	select {
+	case <-a.Restart:
+		return true
+	default:
+		return false
 	}
 }
