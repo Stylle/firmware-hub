@@ -4,6 +4,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
 import ActivityPanel from "./ActivityPanel.vue";
 import AppearanceControls from "./AppearanceControls.vue";
+import UiIcon from "./UiIcon.vue";
 type User = { id: number; name: string; admin: boolean; csrf: string };
 type Project = {
   id: number;
@@ -791,14 +792,15 @@ onUnmounted(() => {
           :class="{ active: section === n[0] }"
           @click="navigate(n[0])"
         >
-          <span>{{ n[2] }}</span>{{ t(n[1]) }}<i v-if="section === n[0]"></i></button
+          <span class="nav-icon"><UiIcon :name="n[0]" /></span>{{ t(n[1]) }}<i v-if="section === n[0]"></i></button
         ><button
           v-if="user.admin"
           :class="{ active: section === 'system' }"
           @click="navigate('system')"
         >
-          <span>⊞</span>{{ t('系统管理') }}
+          <span class="nav-icon"><UiIcon name="system" /></span>{{ t('系统管理') }}
         </button>
+        <button type="button" data-about-open><span class="nav-icon"><UiIcon name="about" /></span>{{ t('关于') }}</button>
       </nav>
       <div class="sidebar-footer">
         <span class="avatar">{{ user.name[0]?.toUpperCase() }}</span>
@@ -811,13 +813,13 @@ onUnmounted(() => {
       </div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a><button class="drawer-toggle" type="button" data-drawer-toggle aria-controls="hub-nav" aria-expanded="false" :aria-label="t('展开导航')">☰</button><AppearanceControls />
+      <header class="topbar">
         <span class="muted"
           >{{ t('工作空间 /') }} {{ project?.name || t('开始') }} /
           <b>{{
             t(navs.find((n) => n[0] === section)?.[1] || '系统管理')
           }}</b></span
-        ><span class="top-status"><i></i> {{ t('Hub 运行中') }}</span>
+        ><div class="row"><AppearanceControls :show-about="false" /><span class="top-status"><i></i> {{ t('Hub 运行中') }}</span></div>
       </header>
       <div class="content">
         <div class="page-heading">
@@ -1033,20 +1035,21 @@ onUnmounted(() => {
             </div>
             <p v-if="releases.length && !filteredReleases.length" class="muted" role="status">{{ t('已加载版本中没有匹配项。可调整筛选或加载更早版本。') }}</p>
             <article v-for="r in filteredReleases" :key="r.id" class="release">
-              <div class="release-summary">
-                <div><small>{{ t('版本') }}</small><h3>{{ r.version }}</h3><span class="badge">{{ r.channel }}</span></div>
-                <div><small>{{ t('文件 / 平台') }}</small><strong>{{ r.file_name }}</strong><span>{{ r.platform }} / {{ r.arch }} · {{ r.hardware }}</span></div>
-                <div><small>{{ t('大小 / 创建时间') }}</small><span>{{ size(r.size) }}</span><time>{{ date(r.created) }}</time></div>
-                <div><small>{{ t('状态') }}</small><span class="badge" :class="r.published ? 'green' : 'gray'">{{ r.published ? t('已发布') : t('草稿 / 已撤回') }}</span></div>
-              </div>
-              <details class="release-details">
-                <summary>{{ t('更新说明与发布信息') }}</summary>
-                <ReleaseNotes :notes="r.notes" />
-                <p class="muted">{{ r.package_kind === "file" ? t('按文件更新') : t('完整文件 / 整包') }} {{ t('· 发布序号') }} {{ r.sequence }}<span v-if="r.base_version"> · {{ r.base_version }} → {{ r.target_path }}</span></p>
-                <p class="muted">{{ t('上传：') }}{{ r.uploaded_by }} {{ t('· 发布：') }}{{ r.published_by || t('尚未发布') }}<span v-if="r.published_at"> · {{ date(r.published_at) }}</span></p>
-              </details>
               <div class="row">
-                <a class="button primary" :href="r.download">{{ t('下载文件') }}</a>
+                <span class="version-mark">↥</span><h3>{{ r.version }}</h3>
+                <span class="badge">{{ r.channel }}</span>
+                <span class="badge" :class="r.published ? 'green' : 'gray'">{{ r.published ? t('已发布') : t('草稿 / 已撤回') }}</span>
+                <span class="spacer"></span><small class="muted">{{ date(r.created) }}</small>
+              </div>
+              <p class="muted">{{ r.platform }} / {{ r.arch }} · {{ r.hardware }} · {{ size(r.size) }} {{ t('· 发布序号') }} {{ r.sequence }}</p>
+              <ReleaseNotes :notes="r.notes" />
+              <p class="muted">{{ r.package_kind === 'file' ? t('按文件更新') : t('完整文件 / 整包') }} · {{ r.file_name }}
+                <span v-if="r.base_version"> · {{ r.base_version }} → {{ r.target_path }}</span>
+                <br />{{ t('上传：') }}{{ r.uploaded_by }} {{ t('· 发布：') }}{{ r.published_by || t('尚未发布') }}
+                <span v-if="r.published_at"> · {{ date(r.published_at) }}</span>
+              </p>
+              <div class="row">
+                <a class="button" :href="r.download">{{ t('下载文件') }} ↓</a>
                 <button v-if="publish" :disabled="busy" @click="toggleRelease(r)">{{ r.published ? t('撤回版本') : t('发布版本') }}</button>
                 <details><summary>{{ t('校验信息') }}</summary><code>SHA-256: {{ r.sha256 }}</code><small>{{ t('安全版本计数：') }}{{ r.security }}</small></details>
               </div>
@@ -1353,7 +1356,7 @@ onUnmounted(() => {
         </template>
       </div>
       <footer class="site-footer">
-        © 2026 Firmware Hub contributors · MIT License <button type="button" data-about-open>{{ t('关于与许可') }}</button> <span>{{ t('账号署名 / 按需连接') }}</span>
+        © 2026 Firmware Hub contributors · MIT License  <span>{{ t('账号署名 / 按需连接') }}</span>
       </footer>
     </div>
   </div>
