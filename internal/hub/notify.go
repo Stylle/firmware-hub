@@ -22,6 +22,15 @@ import (
 )
 
 type notification struct {
+	WebhookEnabled  *bool `json:"webhook_enabled,omitempty"`
+	TelegramEnabled *bool `json:"telegram_enabled,omitempty"`
+	MQTTEnabled     *bool `json:"mqtt_enabled,omitempty"`
+	WebhookSource   int64 `json:"webhook_source"`
+	TelegramSource  int64 `json:"telegram_source"`
+	MQTTSource      int64 `json:"mqtt_source"`
+	webhookPrivate  bool
+	mqttPrivate     bool
+
 	Webhook          string `json:"webhook"`
 	WebhookSecret    string `json:"webhook_secret"`
 	TelegramToken    string `json:"telegram_token"`
@@ -36,11 +45,7 @@ type notification struct {
 	HasMQTTPassword  bool   `json:"has_mqtt_password"`
 }
 
-func (a *App) notification(pid int64) (notification, error) {
-	var n notification
-	e := a.DB.QueryRow("SELECT webhook,webhook_secret,telegram_token,telegram_chat,mqtt_url,mqtt_user,mqtt_password,mqtt_topic,allow_private FROM notifications WHERE project_id=?", pid).Scan(&n.Webhook, &n.WebhookSecret, &n.TelegramToken, &n.TelegramChat, &n.MQTTURL, &n.MQTTUser, &n.MQTTPassword, &n.MQTTTopic, &n.AllowPrivate)
-	return n, e
-}
+func (a *App) notification(pid int64) (notification, error) { return notificationFor(a.DB, pid) }
 func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	pid := pathID(r)
 	u, ok := a.allowed(w, r, pid, false, false)
@@ -51,7 +56,11 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "forbidden", "仅所有者可管理通知")
 		return
 	}
-	old, _ := a.notification(pid)
+	old, loadErr := notificationRaw(a.DB, pid)
+	if loadErr != nil {
+		fail(w, 500, "database_error", "读取通知配置失败")
+		return
+	}
 	if r.Method == "GET" {
 		old.HasWebhookSecret = old.WebhookSecret != ""
 		old.HasTelegramToken = old.TelegramToken != ""
@@ -65,6 +74,19 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	var n notification
 	if readJSON(w, r, &n) != nil {
 		fail(w, 400, "invalid_request", "配置格式错误")
+		return
+	}
+	if n.WebhookEnabled == nil {
+		n.WebhookEnabled = old.WebhookEnabled
+	}
+	if n.TelegramEnabled == nil {
+		n.TelegramEnabled = old.TelegramEnabled
+	}
+	if n.MQTTEnabled == nil {
+		n.MQTTEnabled = old.MQTTEnabled
+	}
+	if n.WebhookSource < 0 || n.TelegramSource < 0 || n.MQTTSource < 0 {
+		fail(w, 400, "invalid_source", "共用项目无效")
 		return
 	}
 	if n.AllowPrivate && !u.Admin {
@@ -84,7 +106,7 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	}
 	if n.MQTTURL != "" {
 		v, e := url.Parse(n.MQTTURL)
-		if e != nil || v.Hostname() == "" || v.User != nil || v.RawQuery != "" || (v.Scheme != "ssl" && !(n.AllowPrivate && v.Scheme == "tcp")) || n.MQTTTopic == "" {
+		if e != nil || v.Hostname() == "" || v.User != nil || v.RawQuery != "" || (v.Scheme != "ssl" && !(n.AllowPrivate && v.Scheme == "tcp")) || (n.MQTTTopic == "" && n.MQTTSource == 0) {
 			fail(w, 400, "invalid_mqtt", "MQTT 使用 ssl://host:8883；管理员可允许内网 tcp://host:1883，并填写主题")
 			return
 		}
@@ -116,8 +138,27 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	} else {
 		n.MQTTPassword = a.seal(n.MQTTPassword)
 	}
-	_, e := a.DB.Exec("INSERT INTO notifications(project_id,webhook,webhook_secret,telegram_token,telegram_chat,mqtt_url,mqtt_user,mqtt_password,mqtt_topic,allow_private) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET webhook=excluded.webhook,webhook_secret=excluded.webhook_secret,telegram_token=excluded.telegram_token,telegram_chat=excluded.telegram_chat,mqtt_url=excluded.mqtt_url,mqtt_user=excluded.mqtt_user,mqtt_password=excluded.mqtt_password,mqtt_topic=excluded.mqtt_topic,allow_private=excluded.allow_private", pid, n.Webhook, n.WebhookSecret, n.TelegramToken, n.TelegramChat, n.MQTTURL, n.MQTTUser, n.MQTTPassword, n.MQTTTopic, n.AllowPrivate)
+	tx, e := a.DB.Begin()
 	if e != nil {
+		fail(w, 500, "database_error", "保存失败")
+		return
+	}
+	defer tx.Rollback()
+	_, e = tx.Exec("INSERT INTO notifications(project_id,webhook,webhook_secret,telegram_token,telegram_chat,mqtt_url,mqtt_user,mqtt_password,mqtt_topic,allow_private) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET webhook=excluded.webhook,webhook_secret=excluded.webhook_secret,telegram_token=excluded.telegram_token,telegram_chat=excluded.telegram_chat,mqtt_url=excluded.mqtt_url,mqtt_user=excluded.mqtt_user,mqtt_password=excluded.mqtt_password,mqtt_topic=excluded.mqtt_topic,allow_private=excluded.allow_private", pid, n.Webhook, n.WebhookSecret, n.TelegramToken, n.TelegramChat, n.MQTTURL, n.MQTTUser, n.MQTTPassword, n.MQTTTopic, n.AllowPrivate)
+	if e != nil {
+		fail(w, 500, "database_error", "保存失败")
+		return
+	}
+	_, e = tx.Exec("INSERT INTO notification_options(project_id,webhook_enabled,telegram_enabled,mqtt_enabled,webhook_source,telegram_source,mqtt_source) VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET webhook_enabled=excluded.webhook_enabled,telegram_enabled=excluded.telegram_enabled,mqtt_enabled=excluded.mqtt_enabled,webhook_source=excluded.webhook_source,telegram_source=excluded.telegram_source,mqtt_source=excluded.mqtt_source", pid, noticeEnabled(n.WebhookEnabled), noticeEnabled(n.TelegramEnabled), noticeEnabled(n.MQTTEnabled), n.WebhookSource, n.TelegramSource, n.MQTTSource)
+	if e != nil {
+		fail(w, 500, "database_error", "保存失败")
+		return
+	}
+	if _, e = notificationFor(tx, pid); e != nil {
+		fail(w, 400, "invalid_source", e.Error())
+		return
+	}
+	if e = tx.Commit(); e != nil {
 		fail(w, 500, "database_error", "保存失败")
 		return
 	}
@@ -219,7 +260,7 @@ func (a *App) deliverOne(ctx context.Context) {
 		req.Header.Set("X-FH-Timestamp", stamp)
 		req.Header.Set("X-FH-Event", event)
 		req.Header.Set("X-FH-Signature", hex.EncodeToString(mac.Sum(nil)))
-		e = postResult(safeHTTP(n.AllowPrivate), req)
+		e = postResult(safeHTTP(n.webhookPrivate), req)
 	case "telegram":
 		token, err := a.unseal(n.TelegramToken)
 		if err != nil || token == "" || n.TelegramChat == "" {
@@ -228,6 +269,7 @@ func (a *App) deliverOne(ctx context.Context) {
 		}
 		e = sendTelegram(ctx, safeHTTP(false), token, n.TelegramChat, p.Name+" 发布新版本 "+v.Version+"\n通道："+v.Channel)
 	case "mqtt":
+		n.AllowPrivate = n.mqttPrivate
 		e = a.sendMQTT(ctx, n, event, payload)
 	default:
 		e = errors.New("未知通知渠道")

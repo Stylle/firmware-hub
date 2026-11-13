@@ -198,6 +198,15 @@ func (a *App) auth(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "invalid_login", "账号或密码不正确")
 		return
 	}
+	var mfaEnabled bool
+	if err := a.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM mfa WHERE user_id=? AND secret<>'')", u.ID).Scan(&mfaEnabled); err != nil {
+		fail(w, 500, "database_error", "无法确认验证器状态")
+		return
+	}
+	if mfaEnabled && in.OTP == "" {
+		fail(w, 401, "mfa_required", "请输入验证器中的六位验证码")
+		return
+	}
 	if !a.loginMFA(u.ID, in.OTP) {
 		a.recordLogin(r, u.ID, u.Name, false, "invalid_otp")
 		fail(w, 401, "invalid_otp", "校验码无效或已使用，请等待新码并检查系统时间")

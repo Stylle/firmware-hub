@@ -136,7 +136,7 @@
  });
  window.addEventListener("hashchange",closeDrawer);
  if (window.matchMedia) {
-  const desktop = window.matchMedia("(min-width:701px)");
+  const desktop = window.matchMedia("(min-width:1001px)");
   if (desktop.addEventListener) desktop.addEventListener("change", event => { if (event.matches) closeDrawer(); });
  }
  function ready() { sync(); }

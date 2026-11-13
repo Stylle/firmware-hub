@@ -73,3 +73,8 @@ jobs:
           tags: stylle/firmware-hub:latest,stylle/firmware-hub:${{ github.ref_name }}
           sbom: true
           provenance: mode=max
+
+      - name: Publish public deployment guide
+        env:
+          HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: python3 scripts/publish-overview.py

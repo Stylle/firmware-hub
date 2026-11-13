@@ -11,3 +11,14 @@ web/node_modules
 *.p12
 *.pfx
 *.exe
+
+.secrets
+runtime
+.local
+.env
+.env.*
+*.dpapi
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*

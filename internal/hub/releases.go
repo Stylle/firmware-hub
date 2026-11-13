@@ -362,9 +362,12 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.Published {
-		var hook, tg, mqtt string
-		_ = tx.QueryRow("SELECT webhook,telegram_token,mqtt_url FROM notifications WHERE project_id=?", pid).Scan(&hook, &tg, &mqtt)
-		for kind, value := range map[string]string{"webhook": hook, "telegram": tg, "mqtt": mqtt} {
+		channels, err := notificationFor(tx, pid)
+		if err != nil {
+			fail(w, 400, "invalid_notification", "通知渠道配置无效，请检查共用项目")
+			return
+		}
+		for kind, value := range map[string]string{"webhook": channels.Webhook, "telegram": channels.TelegramToken, "mqtt": channels.MQTTURL} {
 			if value != "" {
 				_, e = tx.Exec("INSERT INTO outbox(project_id,release_id,kind,event,created) VALUES(?,?,?,?,?)", pid, rid, kind, randomToken(), now())
 				if e != nil {

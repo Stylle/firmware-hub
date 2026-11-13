@@ -57,6 +57,9 @@ type Device = {
   revoked: boolean;
 };
 type Notice = {
+ webhook_enabled: boolean; telegram_enabled: boolean; mqtt_enabled: boolean;
+ webhook_source: number; telegram_source: number; mqtt_source: number;
+
   webhook: string;
   webhook_secret: string;
   telegram_token: string;
@@ -114,6 +117,7 @@ const uploadMeta = ref({
   base_version: "",
   target_path: "",
 });
+const loginMFARequired = ref(false);
 const loginName = ref("admin"),
   loginPassword = ref(""),
   loginOTP = ref(""),
@@ -142,8 +146,12 @@ const freshProject = (): Project => ({
   role: "owner",
   has_publish_password: false,
 });
+const noticeTab = ref('webhook');
 const draft = ref<Project>(freshProject()),
   notice = ref<Notice>({
+ webhook_enabled:true, telegram_enabled:true, mqtt_enabled:true,
+ webhook_source:0, telegram_source:0, mqtt_source:0,
+
     webhook: "",
     webhook_secret: "",
     telegram_token: "",
@@ -234,6 +242,7 @@ async function api<T = unknown>(
     .json()
     .catch(() => ({ message: "服务返回异常，请查看运行记录" }));
   if (!r.ok) {
+    if (data.error === 'mfa_required' || data.error === 'invalid_otp') loginMFARequired.value = true;
     if (r.status === 401 && user.value) user.value = null;
     throw new Error(data.message || `请求失败 (${r.status})`);
   }
@@ -708,24 +717,14 @@ onUnmounted(() => {
     <button v-if="historyMore" :disabled="busy" @click="olderReleases">
       {{ t('加载更早版本') }}
     </button>
+    <footer class="site-footer">© 2026 Firmware Hub contributors · MIT License</footer>
   </main>
   <main v-else-if="!user" class="login-page">
-    <section class="login-story">
+    <header class="hub-login-header">
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
-      <div>
-        <span class="eyebrow">BUILD. RELEASE. DELIVER.</span>
-        <h1>{{ t('固件与软件') }}<br />{{ t('更新中心。') }}</h1>
-        <p>
-          {{ t('面向设备与应用的轻量分发中心。') }}<br />{{ t('版本、发布与设备状态，在同一个地方。') }}
-        </p>
-        <div class="story-grid">
-          <span>{{ t('01 / 账号署名') }}</span><span>{{ t('02 / 可靠传输') }}</span
-          ><span>{{ t('03 / 按需采集') }}</span>
-        </div>
-      </div>
-      <small>{{ t('清晰发布 · 轻量交付') }}</small>
-    </section>
-    <section class="login-form"><AppearanceControls />
+      <AppearanceControls :show-about="false" />
+    </header>
+    <section class="login-form">
       <span class="eyebrow">WELCOME BACK</span>
       <h2>{{ t('登录工作空间') }}</h2>
       <p class="muted">{{ t('使用管理员或项目成员账号继续。') }}</p>
@@ -733,18 +732,18 @@ onUnmounted(() => {
       <form @submit.prevent="login">
         <label
           >{{ t('用户名') }}<input
-            v-model="loginName"
+            v-model="loginName" @input="loginMFARequired = false; loginOTP = ''"
             autocomplete="username"
             required /></label
         ><label
           >{{ t('密码') }}<input
-            v-model="loginPassword"
+            v-model="loginPassword" @input="loginMFARequired = false; loginOTP = ''"
             type="password"
             autocomplete="current-password"
             required
         /></label>
-        <label
-          >{{ t('验证器校验码（仅启用后填写）') }}<input
+        <label v-if="loginMFARequired"
+          >{{ t('验证器校验码') }}<input
             v-model="loginOTP"
             inputmode="numeric"
             autocomplete="one-time-code"
@@ -756,16 +755,14 @@ onUnmounted(() => {
           {{ busy ? t('正在登录…') : t('登录 →') }}
         </button>
       </form>
-      <small class="muted"
-        >{{ t('首次账户由部署时 USER / PASSWORD 创建。') }}<br />{{ t('忘记密码可通过 admin-sync\n        重置。') }}</small
-      >
+      <footer class="login-copyright">© 2026 Firmware Hub contributors · MIT License</footer>
     </section>
   </main>
   <div v-else class="shell" data-drawer-host>
     <button class="drawer-backdrop" type="button" data-drawer-close :aria-label="t('关闭导航')"></button>
     <aside id="hub-nav" class="sidebar" data-drawer :aria-label="t('工作空间导航')"><button class="drawer-close" type="button" data-drawer-close>{{ t('关闭导航') }}</button>
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
-      <div class="space-label">{{ t('工作空间') }} <span>v0.3</span></div>
+      <div class="space-label">{{ t('工作空间') }} <span>v0.4</span></div>
       <button
         class="new-project"
         @click="
@@ -814,6 +811,7 @@ onUnmounted(() => {
     </aside>
     <div class="workspace">
       <header class="topbar">
+        <button class="hub-nav-toggle" type="button" data-drawer-toggle aria-controls="hub-nav" aria-expanded="false" :aria-label="t('主导航')"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16 M4 12h16 M4 18h16" /></svg></button>
         <span class="muted"
           >{{ t('工作空间 /') }} {{ project?.name || t('开始') }} /
           <b>{{
@@ -1126,72 +1124,36 @@ onUnmounted(() => {
               {{ t('状态由客户端自报，不等于硬件可信证明。关闭客户端上报后，已有记录会在超时后显示为心跳超时。') }}
             </p>
           </section>
-          <section v-else-if="section === 'notifications'" class="card">
-            <h2>{{ t('发布即提醒') }}</h2>
-            <p class="muted">
-              {{ t('通知只提示检查新版本，不直接执行安装。渠道留空即关闭。凭据留空保留原值，填写单个\n              - 清除。') }}
-            </p>
+          <section v-else-if="section === 'notifications'" class="card notice-settings">
+            <h2>{{ t('更新通知设置') }}</h2>
+            <p class="muted">{{ t('Webhook、Telegram 和 MQTT 可独立启用。共用连接的项目可使用相同配置，发送开关互不影响。') }}</p>
             <p v-if="!owner" class="hint">{{ t('只有项目所有者可以管理通知凭据。') }}</p>
             <form v-else @submit.prevent="saveNotice">
-              <div class="form-grid">
-                <label
-                  >{{ t('Webhook 地址') }}<input
-                    v-model="notice.webhook"
-                    placeholder="https://example.com/webhook" /></label
-                ><label
-                  >{{ t('Webhook 签名密钥') }}<input
-                    v-model="notice.webhook_secret"
-                    type="password"
-                    :placeholder="
-                      notice.has_webhook_secret
-                        ? t('已保存，留空不变')
-                        : t('建议设置共享签名密钥')
-                    "
-                    autocomplete="new-password" /></label
-                ><label
-                  >Telegram Bot Token<input
-                    v-model="notice.telegram_token"
-                    type="password"
-                    :placeholder="
-                      notice.has_telegram_token
-                        ? t('已保存，留空不变')
-                        : t('留空不启用')
-                    "
-                    autocomplete="new-password" /></label
-                ><label
-                  >Telegram Chat ID<input
-                    v-model="notice.telegram_chat"
-                    :placeholder="t('会话 ID')" /></label
-                ><label
-                  >MQTT Broker<input
-                    v-model="notice.mqtt_url"
-                    placeholder="ssl://broker.example.com:8883" /></label
-                ><label
-                  >{{ t('MQTT 主题') }}<input
-                    v-model="notice.mqtt_topic"
-                    placeholder="firmware/project/available" /></label
-                ><label
-                  >{{ t('MQTT 用户名') }}<input
-                    v-model="notice.mqtt_user"
-                    autocomplete="off" /></label
-                ><label
-                  >{{ t('MQTT 密码') }}<input
-                    v-model="notice.mqtt_password"
-                    type="password"
-                    :placeholder="
-                      notice.has_mqtt_password ? t('已保存，留空不变') : ''
-                    "
-                    autocomplete="new-password"
-                /></label>
+              <div class="notice-tabs" role="tablist" aria-label="通知渠道">
+                <button v-for="c in [{id:'webhook',name:'Webhook'},{id:'telegram',name:'Telegram'},{id:'mqtt',name:'MQTT'}]" :key="c.id" type="button" role="tab" :aria-selected="noticeTab === c.id" :class="{active:noticeTab === c.id}" @click="noticeTab=c.id">{{ c.name }}</button>
               </div>
-              <label v-if="user.admin" class="check"
-                ><input
-                  v-model="notice.allow_private"
-                  type="checkbox"
-                />{{ t('允许访问内网通知目标，以及内网 HTTP / TCP（仅可信目标）') }}</label
-              ><button class="primary" :disabled="busy">{{ t('保存通知配置') }}</button>
-            </form>
-          </section>
+<section v-show="noticeTab === 'webhook'" class="notice-channel" role="tabpanel">
+ <label class="check"><input type="checkbox" v-model="notice.webhook_enabled" />{{ t('启用 Webhook 通知') }}</label>
+ <label>{{ t('连接配置') }}<select v-model.number="notice.webhook_source"><option :value="0">{{ t('本项目独立配置') }}</option><option v-for="p in projects.filter(p => p.id !== project?.id && p.role === 'owner')" :key="p.id" :value="p.id">{{ t('共用：') }}{{ p.name }}</option></select></label>
+ <p v-if="notice.webhook_source" class="hint">{{ t('引用所选项目的连接信息，后续修改会同步生效；凭据不会显示到当前项目。仅可引用同一所有者的项目，不能循环引用。') }}</p>
+ <div v-else class="form-grid"><label>Webhook 地址<input v-model="notice.webhook" placeholder="https://example.com/webhook" /></label><label>{{ t('Webhook 签名密钥') }}<input v-model="notice.webhook_secret" type="password" autocomplete="new-password" :placeholder="notice.has_webhook_secret ? t('已保存，留空不变') : ''" /></label></div>
+</section>
+<section v-show="noticeTab === 'telegram'" class="notice-channel" role="tabpanel">
+ <label class="check"><input type="checkbox" v-model="notice.telegram_enabled" />{{ t('启用 Telegram 通知') }}</label>
+ <label>{{ t('连接配置') }}<select v-model.number="notice.telegram_source"><option :value="0">{{ t('本项目独立配置') }}</option><option v-for="p in projects.filter(p => p.id !== project?.id && p.role === 'owner')" :key="p.id" :value="p.id">{{ t('共用：') }}{{ p.name }}</option></select></label>
+ <p v-if="notice.telegram_source" class="hint">{{ t('引用所选项目的连接信息，后续修改会同步生效；凭据不会显示到当前项目。仅可引用同一所有者的项目，不能循环引用。') }}</p>
+ <div v-else class="form-grid"><label>Bot Token<input v-model="notice.telegram_token" type="password" autocomplete="new-password" :placeholder="notice.has_telegram_token ? t('已保存，留空不变') : ''" /></label><label>Chat ID<input v-model="notice.telegram_chat" /></label></div>
+</section>
+<section v-show="noticeTab === 'mqtt'" class="notice-channel" role="tabpanel">
+ <label class="check"><input type="checkbox" v-model="notice.mqtt_enabled" />{{ t('启用 MQTT 通知') }}</label>
+ <label>{{ t('连接配置') }}<select v-model.number="notice.mqtt_source"><option :value="0">{{ t('本项目独立配置') }}</option><option v-for="p in projects.filter(p => p.id !== project?.id && p.role === 'owner')" :key="p.id" :value="p.id">{{ t('共用：') }}{{ p.name }}</option></select></label>
+ <p v-if="notice.mqtt_source" class="hint">{{ t('引用所选项目的连接信息，后续修改会同步生效；凭据不会显示到当前项目。仅可引用同一所有者的项目，不能循环引用。') }}</p>
+ <div v-else class="form-grid"><label>MQTT Broker<input v-model="notice.mqtt_url" placeholder="ssl://broker.example.com:8883" /></label><label>{{ t('MQTT 用户名') }}<input v-model="notice.mqtt_user" autocomplete="off" /></label><label>{{ t('MQTT 密码') }}<input v-model="notice.mqtt_password" type="password" autocomplete="new-password" :placeholder="notice.has_mqtt_password ? t('已保存，留空不变') : ''" /></label></div>
+<label>{{ t('MQTT 主题 / 项目覆盖') }}<input v-model="notice.mqtt_topic" placeholder="firmware/{project}/available" /><small>{{ t('支持 {project} 自动替换为当前项目标识。共用连接时留空沿用来源主题模板，也可以指定本项目主题。') }}</small></label></section>
+<p class="hint">{{ t('凭据留空保留原值，填写单个 - 清除。关闭渠道会保留配置。') }}</p>
+ <label v-if="user.admin" class="check"><input v-model="notice.allow_private" type="checkbox" />{{ t('允许本项目独立连接访问内网 HTTP / TCP（仅可信目标）') }}</label>
+ <button class="primary" :disabled="busy">{{ t('保存通知配置') }}</button>
+ </form></section>
           <section v-else-if="section === 'logs'" class="card">
             <h2>{{ t('项目操作记录') }}</h2>
             <p class="muted">

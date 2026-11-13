@@ -11,7 +11,6 @@ onMounted(() => window.dispatchEvent(new Event('appearance-ready')))
    <button type="button" data-theme-choice="system" aria-label="跟随系统" title="跟随系统"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 4h18v12H3z M8 20h8 M12 16v4" /></svg></button>
       <button type="button" data-lang-toggle aria-label="切换语言" title="中文 / English">中</button>
   </div>
-  <button type="button" data-appearance-open aria-label="外观设置" title="外观设置"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6" /></svg></button>
   <button v-if="showAbout" type="button" data-about-open aria-label="关于" title="关于"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 8h.01 M12 11v6 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0" /></svg></button>
  </div>
 </template>
