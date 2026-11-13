@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from "./i18n";
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
 import ActivityPanel from "./ActivityPanel.vue";
@@ -157,7 +158,7 @@ const memberName = ref(""),
   memberRole = ref("viewer"),
   newName = ref(""),
   newPassword = ref("");
-const publicSlug = new URLSearchParams(location.search).get("project"),
+const publicSlug = new URLSearchParams(location.search).get('project'),
   publicProject = ref<{
     name: string;
     slug: string;
@@ -206,7 +207,7 @@ const labels: Record<string, string> = {
   reviewer: "发布审核者",
   viewer: "查看者",
 };
-const label = (s: string) => labels[s] || s;
+const label = (s: string) => t(labels[s] || s);
 const date = (s: number) =>
   s ? new Date(s * 1000).toLocaleString() : "尚未上报";
 const size = (n: number) =>
@@ -453,7 +454,7 @@ async function toggleRelease(r: Release) {
     return;
   let password = "";
   if (!r.published && project.value?.has_publish_password) {
-    const value = prompt("请输入此项目的发布密码（不保存到浏览器）");
+    const value = prompt('请输入此项目的发布密码（不保存到浏览器）');
     if (value === null) return;
     password = value;
   }
@@ -648,24 +649,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="!ready" class="loading">Firmware Hub · 正在连接</div>
+  <div v-if="!ready" class="loading">{{ t('Firmware Hub · 正在连接') }}</div>
   <main v-else-if="publicMode" class="public-page">
     <div class="row"><a class="brand" href="/"><img src="/icon.svg" alt="" /> Firmware Hub</a><span class="spacer"></span><AppearanceControls /></div>
     <div class="row">
-      <a href="/?public">所有公开项目</a><span class="spacer"></span
-      ><a href="/">管理登录 →</a>
+      <a href="/?public">{{ t('所有公开项目') }}</a><span class="spacer"></span
+      ><a href="/">{{ t('管理登录 →') }}</a>
     </div>
     <header class="public-head">
       <span class="eyebrow">RELEASE CENTER</span>
       <h1>
-        {{ publicSlug ? publicProject?.name || "项目不可用" : "公开版本中心" }}
+        {{ publicSlug ? publicProject?.name || t('项目不可用') : t('公开版本中心') }}
       </h1>
       <p>{{ publicProject?.description }}</p>
     </header>
     <p v-if="error" class="alert error">{{ error }}</p>
     <template v-if="!publicSlug">
       <p v-if="!publicProjects.length && !error" class="empty">
-        暂时没有公开项目
+        {{ t('暂时没有公开项目') }}
       </p>
       <article v-for="p in publicProjects" :key="p.slug" class="card">
         <h2>
@@ -676,7 +677,7 @@ onUnmounted(() => {
         <p class="muted">{{ p.description }}</p>
       </article>
     </template>
-    <p v-else-if="!releases.length && !error" class="empty">暂时没有公开版本</p>
+    <p v-else-if="!releases.length && !error" class="empty">{{ t('暂时没有公开版本') }}</p>
     <article v-for="r in releases" :key="r.id" class="card release">
       <div class="row">
         <h2>{{ r.version }}</h2>
@@ -686,25 +687,25 @@ onUnmounted(() => {
       </div>
       <ReleaseNotes :notes="r.notes" />
       <p class="muted">
-        {{ r.package_kind === "file" ? "按文件更新" : "完整文件 / 整包" }} ·
-        {{ r.file_name }} · 发布者：{{ r.published_by || "历史记录"
+        {{ r.package_kind === "file" ? t('按文件更新') : t('完整文件 / 整包') }} ·
+        {{ r.file_name }} {{ t('· 发布者：') }}{{ r.published_by || t('历史记录')
         }}<span v-if="r.base_version">
-          · 适用旧版本 {{ r.base_version }} → {{ r.target_path }}</span
+          {{ t('· 适用旧版本') }} {{ r.base_version }} → {{ r.target_path }}</span
         >
       </p>
       <div class="row">
         <span>{{ r.platform }} / {{ r.arch }} / {{ r.hardware }}</span
         ><span class="muted">{{ size(r.size) }}</span
-        ><a class="button primary" :href="r.download">下载文件 ↓</a>
+        ><a class="button primary" :href="r.download">{{ t('下载文件 ↓') }}</a>
       </div>
       <details>
-        <summary>完整性校验</summary>
+        <summary>{{ t('完整性校验') }}</summary>
         <code>{{ r.sha256 }}</code>
-        <p class="muted">SHA-256 用于检查传输完整性，不是发布者数字签名。</p>
+        <p class="muted">{{ t('SHA-256 用于检查传输完整性，不是发布者数字签名。') }}</p>
       </details>
     </article>
     <button v-if="historyMore" :disabled="busy" @click="olderReleases">
-      加载更早版本
+      {{ t('加载更早版本') }}
     </button>
   </main>
   <main v-else-if="!user" class="login-page">
@@ -712,59 +713,58 @@ onUnmounted(() => {
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
       <div>
         <span class="eyebrow">BUILD. RELEASE. DELIVER.</span>
-        <h1>固件与软件<br />更新中心。</h1>
+        <h1>{{ t('固件与软件') }}<br />{{ t('更新中心。') }}</h1>
         <p>
-          面向设备与应用的轻量分发中心。<br />版本、发布与设备状态，在同一个地方。
+          {{ t('面向设备与应用的轻量分发中心。') }}<br />{{ t('版本、发布与设备状态，在同一个地方。') }}
         </p>
         <div class="story-grid">
-          <span>01 / 账号署名</span><span>02 / 可靠传输</span
-          ><span>03 / 按需采集</span>
+          <span>{{ t('01 / 账号署名') }}</span><span>{{ t('02 / 可靠传输') }}</span
+          ><span>{{ t('03 / 按需采集') }}</span>
         </div>
       </div>
-      <small>清晰发布 · 轻量交付</small>
+      <small>{{ t('清晰发布 · 轻量交付') }}</small>
     </section>
     <section class="login-form"><AppearanceControls />
       <span class="eyebrow">WELCOME BACK</span>
-      <h2>登录工作空间</h2>
-      <p class="muted">使用管理员或项目成员账号继续。</p>
-      <p><a href="/?public">无需登录，浏览公开版本 →</a></p>
+      <h2>{{ t('登录工作空间') }}</h2>
+      <p class="muted">{{ t('使用管理员或项目成员账号继续。') }}</p>
+      <p><a href="/?public">{{ t('无需登录，浏览公开版本 →') }}</a></p>
       <form @submit.prevent="login">
         <label
-          >用户名<input
+          >{{ t('用户名') }}<input
             v-model="loginName"
             autocomplete="username"
             required /></label
         ><label
-          >密码<input
+          >{{ t('密码') }}<input
             v-model="loginPassword"
             type="password"
             autocomplete="current-password"
             required
         /></label>
         <label
-          >验证器校验码（仅启用后填写）<input
+          >{{ t('验证器校验码（仅启用后填写）') }}<input
             v-model="loginOTP"
             inputmode="numeric"
             autocomplete="one-time-code"
             maxlength="6"
-            placeholder="6 位校验码"
+            :placeholder="t('6 位校验码')"
         /></label>
         <p v-if="error" class="alert error" role="alert">{{ error }}</p>
         <button class="primary" :disabled="busy">
-          {{ busy ? "正在登录…" : "登录 →" }}
+          {{ busy ? t('正在登录…') : t('登录 →') }}
         </button>
       </form>
       <small class="muted"
-        >首次账户由部署时 USER / PASSWORD 创建。<br />忘记密码可通过 admin-sync
-        重置。</small
+        >{{ t('首次账户由部署时 USER / PASSWORD 创建。') }}<br />{{ t('忘记密码可通过 admin-sync\n        重置。') }}</small
       >
     </section>
   </main>
   <div v-else class="shell" data-drawer-host>
-    <button class="drawer-backdrop" type="button" data-drawer-close aria-label="关闭导航"></button>
-    <aside id="hub-nav" class="sidebar" data-drawer aria-label="工作空间导航"><button class="drawer-close" type="button" data-drawer-close>关闭导航</button>
+    <button class="drawer-backdrop" type="button" data-drawer-close :aria-label="t('关闭导航')"></button>
+    <aside id="hub-nav" class="sidebar" data-drawer :aria-label="t('工作空间导航')"><button class="drawer-close" type="button" data-drawer-close>{{ t('关闭导航') }}</button>
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
-      <div class="space-label">工作空间 <span>v0.3</span></div>
+      <div class="space-label">{{ t('工作空间') }} <span>v0.3</span></div>
       <button
         class="new-project"
         @click="
@@ -772,13 +772,13 @@ onUnmounted(() => {
           modal = 'project';
         "
       >
-        ＋ 创建项目</button
+        {{ t('＋ 创建项目') }}</button
       ><label class="project-select"
-        >当前项目<select
+        >{{ t('当前项目') }}<select
           :value="selected ?? ''"
           @change="choose(Number(($event.target as HTMLSelectElement).value))"
         >
-          <option v-if="!projects.length" value="">尚未创建项目</option>
+          <option v-if="!projects.length" value="">{{ t('尚未创建项目') }}</option>
           <option v-for="p in projects" :key="p.id" :value="p.id">
             {{ p.name }}
           </option>
@@ -791,34 +791,33 @@ onUnmounted(() => {
           :class="{ active: section === n[0] }"
           @click="navigate(n[0])"
         >
-          <span>{{ n[2] }}</span>{{ n[1]
-          }}<i v-if="section === n[0]"></i></button
+          <span>{{ n[2] }}</span>{{ t(n[1]) }}<i v-if="section === n[0]"></i></button
         ><button
           v-if="user.admin"
           :class="{ active: section === 'system' }"
           @click="navigate('system')"
         >
-          <span>⊞</span>系统管理
+          <span>⊞</span>{{ t('系统管理') }}
         </button>
       </nav>
       <div class="sidebar-footer">
         <span class="avatar">{{ user.name[0]?.toUpperCase() }}</span>
         <div>
           <strong>{{ user.name }}</strong><small>{{
-            user.admin ? "平台管理员" : "项目成员"
+            user.admin ? t('平台管理员') : t('项目成员')
           }}</small>
         </div>
-        <button title="退出登录" @click="logout">↪</button>
+        <button :title="t('退出登录')" @click="logout">↪</button>
       </div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><button class="drawer-toggle" type="button" data-drawer-toggle aria-controls="hub-nav" aria-expanded="false" aria-label="展开导航">☰</button><AppearanceControls />
+      <header class="topbar"><a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a><button class="drawer-toggle" type="button" data-drawer-toggle aria-controls="hub-nav" aria-expanded="false" :aria-label="t('展开导航')">☰</button><AppearanceControls />
         <span class="muted"
-          >工作空间 / {{ project?.name || "开始" }} /
+          >{{ t('工作空间 /') }} {{ project?.name || t('开始') }} /
           <b>{{
-            navs.find((n) => n[0] === section)?.[1] || "系统管理"
+            t(navs.find((n) => n[0] === section)?.[1] || '系统管理')
           }}</b></span
-        ><span class="top-status"><i></i> Hub 运行中</span>
+        ><span class="top-status"><i></i> {{ t('Hub 运行中') }}</span>
       </header>
       <div class="content">
         <div class="page-heading">
@@ -826,23 +825,23 @@ onUnmounted(() => {
             <span class="eyebrow">{{
               section === "devices" ? "DEVICE VISIBILITY" : "FIRMWARE WORKSPACE"
             }}</span>
-            <h1>{{ navs.find((n) => n[0] === section)?.[1] || "系统管理" }}</h1>
+            <h1>{{ t(navs.find((n) => n[0] === section)?.[1] || '系统管理') }}</h1>
             <p>
               {{
                 section === "devices"
-                  ? "只采集你明确允许的状态，在线以最近一次心跳为准。"
-                  : "管理版本发布、设备状态与通知。"
+                  ? t('只采集你明确允许的状态，在线以最近一次心跳为准。')
+                  : t('管理版本发布、设备状态与通知。')
               }}
             </p>
           </div>
           <div class="row">
-            <button :disabled="busy" @click="run(refreshAll)">↻ 刷新</button
+            <button :disabled="busy" @click="run(refreshAll)">{{ t('↻ 刷新') }}</button
             ><button
               v-if="section === 'releases' && project && write"
               class="primary"
               @click="modal = 'release'"
             >
-              ＋ 上传版本</button
+              {{ t('＋ 上传版本') }}</button
             ><button
               v-if="section === 'devices' && project && write"
               class="primary"
@@ -851,7 +850,7 @@ onUnmounted(() => {
                 modal = 'device';
               "
             >
-              ＋ 添加设备
+              {{ t('＋ 添加设备') }}
             </button>
           </div>
         </div>
@@ -859,25 +858,25 @@ onUnmounted(() => {
         <p v-if="message" class="alert success" role="status">{{ message }}</p>
         <template v-if="section === 'system' && user.admin"
           ><section class="card">
-            <h2>状态采集总开关</h2>
+            <h2>{{ t('状态采集总开关') }}</h2>
             <p class="muted">
-              关闭后，所有项目拒收设备心跳；已保存信息保留，可在各项目清除。
+              {{ t('关闭后，所有项目拒收设备心跳；已保存信息保留，可在各项目清除。') }}
             </p>
             <label class="check"
               ><input
                 v-model="globalTelemetry"
                 type="checkbox"
-              />允许项目按需接收设备状态</label
+              />{{ t('允许项目按需接收设备状态') }}</label
             ><button class="primary" :disabled="busy" @click="setGlobal">
-              保存设置
+              {{ t('保存设置') }}
             </button>
           </section>
           <section class="card">
-            <h2>用户管理</h2>
+            <h2>{{ t('用户管理') }}</h2>
             <form class="inline-form" @submit.prevent="createUser">
               <input
                 v-model="newName"
-                placeholder="用户名"
+                :placeholder="t('用户名')"
                 required
                 autocomplete="off"
               /><input
@@ -885,14 +884,14 @@ onUnmounted(() => {
                 type="password"
                 minlength="12"
                 maxlength="72"
-                placeholder="初始密码（至少 12 字节）"
+                :placeholder="t('初始密码（至少 12 字节）')"
                 required
                 autocomplete="new-password"
-              /><button :disabled="busy">创建普通用户</button>
+              /><button :disabled="busy">{{ t('创建普通用户') }}</button>
             </form>
             <div v-for="u in users" :key="u.id" class="list-row">
               <strong>{{ u.name }}</strong><span class="muted">{{
-                u.admin ? "管理员" : "普通用户"
+                u.admin ? t('管理员') : t('普通用户')
               }}</span>
             </div>
           </section>
@@ -901,13 +900,12 @@ onUnmounted(() => {
         <template v-else-if="section === 'account'"
           ><ActivityPanel :request="api" />
           <section class="card">
-            <h2>验证器二次验证</h2>
+            <h2>{{ t('验证器二次验证') }}</h2>
             <p class="muted">
-              保护网页登录，不影响设备凭据和固件下载。支持常见 TOTP
-              验证器；启用后请保存好验证器备份。
+              {{ t('保护网页登录，不影响设备凭据和固件下载。支持常见 TOTP\n              验证器；启用后请保存好验证器备份。') }}
             </p>
             <span class="badge" :class="mfaEnabled ? 'green' : 'gray'">{{
-              mfaEnabled ? "已启用" : "尚未启用"
+              mfaEnabled ? t('已启用') : t('尚未启用')
             }}</span>
             <form
               @submit.prevent="
@@ -917,7 +915,7 @@ onUnmounted(() => {
               "
             >
               <label
-                >当前登录密码<input
+                >{{ t('当前登录密码') }}<input
                   v-model="mfaPassword"
                   type="password"
                   required
@@ -925,17 +923,17 @@ onUnmounted(() => {
               /></label>
               <template v-if="mfaSecret"
                 ><p class="hint">
-                  请用验证器扫描二维码，或手动输入密钥。确认前不会启用。
+                  {{ t('请用验证器扫描二维码，或手动输入密钥。确认前不会启用。') }}
                 </p>
                 <img
                   :src="mfaQR"
                   width="220"
                   height="220"
-                  alt="验证器绑定二维码"
+                  :alt="t('验证器绑定二维码')"
                 /><code class="token">{{ mfaSecret }}</code></template
               >
               <label v-if="mfaEnabled || mfaSecret"
-                >验证器当前校验码<input
+                >{{ t('验证器当前校验码') }}<input
                   v-model="mfaCode"
                   inputmode="numeric"
                   autocomplete="one-time-code"
@@ -946,24 +944,23 @@ onUnmounted(() => {
               <button class="primary" :disabled="busy">
                 {{
                   mfaEnabled
-                    ? "验证并关闭"
+                    ? t('验证并关闭')
                     : mfaSecret
-                      ? "确认启用"
-                      : "添加验证器"
+                      ? t('确认启用')
+                      : t('添加验证器')
                 }}
               </button>
             </form>
             <p class="muted footnote">
-              更改后撤销本账号全部会话并重新登录。验证器丢失可通过本机
-              admin-sync 恢复管理员。
+              {{ t('更改后撤销本账号全部会话并重新登录。验证器丢失可通过本机\n              admin-sync 恢复管理员。') }}
             </p>
           </section></template
         >
         <section v-else-if="!project" class="card empty">
           <div class="empty-icon">▣</div>
-          <h2>从一个项目开始</h2>
+          <h2>{{ t('从一个项目开始') }}</h2>
           <p>
-            创建项目后上传文件、填写版本与更新说明。默认按账号记录发布责任；数字签名可在项目设置中按需启用。
+            {{ t('创建项目后上传文件、填写版本与更新说明。默认按账号记录发布责任；数字签名可在项目设置中按需启用。') }}
           </p>
           <button
             class="primary"
@@ -972,8 +969,8 @@ onUnmounted(() => {
               modal = 'project';
             "
           >
-            创建第一个项目</button
-          ><small class="muted">普通账号发布无需安装 fwtool。</small>
+            {{ t('创建第一个项目') }}</button
+          ><small class="muted">{{ t('普通账号发布无需安装 fwtool。') }}</small>
         </section>
         <template v-else>
           <div
@@ -982,7 +979,7 @@ onUnmounted(() => {
           >
             <article>
               <span>{{
-                section === "devices" ? "已加载设备" : "已加载版本"
+                section === "devices" ? t('已加载设备') : t('已加载版本')
               }}</span><strong>{{
                 section === "devices" ? devices.length : releases.length
               }}</strong
@@ -990,7 +987,7 @@ onUnmounted(() => {
             </article>
             <article>
               <span>{{
-                section === "devices" ? "加载设备在线" : "其中已发布"
+                section === "devices" ? t('加载设备在线') : t('其中已发布')
               }}</span><strong>{{
                 section === "devices"
                   ? online
@@ -998,22 +995,22 @@ onUnmounted(() => {
               }}</strong
               ><small>{{
                 section === "devices"
-                  ? "不是持续连通性保证"
-                  : "按账号记录发布责任"
+                  ? t('不是持续连通性保证')
+                  : t('按账号记录发布责任')
               }}</small>
             </article>
             <article>
-              <span>设备状态通道</span
+              <span>{{ t('设备状态通道') }}</span
               ><strong class="stat-text">{{
-                project.telemetry && globalTelemetry ? "按需开启" : "已关闭"
+                project.telemetry && globalTelemetry ? t('按需开启') : t('已关闭')
               }}</strong
-              ><small>客户端仍可独立关闭</small>
+              ><small>{{ t('客户端仍可独立关闭') }}</small>
             </article>
           </div>
           <section v-if="section === 'releases'" class="card">
             <div class="card-heading">
               <h2>
-                发布历史 <span class="count">{{ releases.length }}</span>
+                {{ t('发布历史') }} <span class="count">{{ releases.length }}</span>
               </h2>
               <a
                 v-if="project.public"
@@ -1021,101 +1018,101 @@ onUnmounted(() => {
                 :href="'/?project=' + project.slug"
                 target="_blank"
                 rel="noopener noreferrer"
-                >查看公开发布页 ↗</a
+                >{{ t('查看公开发布页 ↗') }}</a
               >
             </div>
             <div v-if="!releases.length" class="empty">
               <div class="empty-icon">↑</div>
-              <h3>还没有发布版本</h3>
-              <p>上传固件、软件整包或单个文件，填写版本说明后发布。</p>
+              <h3>{{ t('还没有发布版本') }}</h3>
+              <p>{{ t('上传固件、软件整包或单个文件，填写版本说明后发布。') }}</p>
             </div>
             <div class="release-toolbar">
-              <label>搜索已加载版本<input v-model="releaseQuery" type="search" placeholder="版本、文件、平台或型号" /></label>
-              <label>发布状态<select v-model="releaseStatus"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿 / 已撤回</option></select></label>
-              <p class="muted">显示 {{ filteredReleases.length }} / 已加载 {{ releases.length }} 条；更早记录请继续加载。</p>
+              <label>{{ t('搜索已加载版本') }}<input v-model="releaseQuery" type="search" :placeholder="t('版本、文件、平台或型号')" /></label>
+              <label>{{ t('发布状态') }}<select v-model="releaseStatus"><option value="all">{{ t('全部状态') }}</option><option value="published">{{ t('已发布') }}</option><option value="draft">{{ t('草稿 / 已撤回') }}</option></select></label>
+              <p class="muted">{{ t('显示') }} {{ filteredReleases.length }} {{ t('/ 已加载') }} {{ releases.length }} {{ t('条；更早记录请继续加载。') }}</p>
             </div>
-            <p v-if="releases.length && !filteredReleases.length" class="muted" role="status">已加载版本中没有匹配项。可调整筛选或加载更早版本。</p>
+            <p v-if="releases.length && !filteredReleases.length" class="muted" role="status">{{ t('已加载版本中没有匹配项。可调整筛选或加载更早版本。') }}</p>
             <article v-for="r in filteredReleases" :key="r.id" class="release">
               <div class="release-summary">
-                <div><small>版本</small><h3>{{ r.version }}</h3><span class="badge">{{ r.channel }}</span></div>
-                <div><small>文件 / 平台</small><strong>{{ r.file_name }}</strong><span>{{ r.platform }} / {{ r.arch }} · {{ r.hardware }}</span></div>
-                <div><small>大小 / 创建时间</small><span>{{ size(r.size) }}</span><time>{{ date(r.created) }}</time></div>
-                <div><small>状态</small><span class="badge" :class="r.published ? 'green' : 'gray'">{{ r.published ? "已发布" : "草稿 / 已撤回" }}</span></div>
+                <div><small>{{ t('版本') }}</small><h3>{{ r.version }}</h3><span class="badge">{{ r.channel }}</span></div>
+                <div><small>{{ t('文件 / 平台') }}</small><strong>{{ r.file_name }}</strong><span>{{ r.platform }} / {{ r.arch }} · {{ r.hardware }}</span></div>
+                <div><small>{{ t('大小 / 创建时间') }}</small><span>{{ size(r.size) }}</span><time>{{ date(r.created) }}</time></div>
+                <div><small>{{ t('状态') }}</small><span class="badge" :class="r.published ? 'green' : 'gray'">{{ r.published ? t('已发布') : t('草稿 / 已撤回') }}</span></div>
               </div>
               <details class="release-details">
-                <summary>更新说明与发布信息</summary>
+                <summary>{{ t('更新说明与发布信息') }}</summary>
                 <ReleaseNotes :notes="r.notes" />
-                <p class="muted">{{ r.package_kind === "file" ? "按文件更新" : "完整文件 / 整包" }} · 发布序号 {{ r.sequence }}<span v-if="r.base_version"> · {{ r.base_version }} → {{ r.target_path }}</span></p>
-                <p class="muted">上传：{{ r.uploaded_by }} · 发布：{{ r.published_by || "尚未发布" }}<span v-if="r.published_at"> · {{ date(r.published_at) }}</span></p>
+                <p class="muted">{{ r.package_kind === "file" ? t('按文件更新') : t('完整文件 / 整包') }} {{ t('· 发布序号') }} {{ r.sequence }}<span v-if="r.base_version"> · {{ r.base_version }} → {{ r.target_path }}</span></p>
+                <p class="muted">{{ t('上传：') }}{{ r.uploaded_by }} {{ t('· 发布：') }}{{ r.published_by || t('尚未发布') }}<span v-if="r.published_at"> · {{ date(r.published_at) }}</span></p>
               </details>
               <div class="row">
-                <a class="button primary" :href="r.download">下载文件</a>
-                <button v-if="publish" :disabled="busy" @click="toggleRelease(r)">{{ r.published ? "撤回版本" : "发布版本" }}</button>
-                <details><summary>校验信息</summary><code>SHA-256: {{ r.sha256 }}</code><small>安全版本计数：{{ r.security }}</small></details>
+                <a class="button primary" :href="r.download">{{ t('下载文件') }}</a>
+                <button v-if="publish" :disabled="busy" @click="toggleRelease(r)">{{ r.published ? t('撤回版本') : t('发布版本') }}</button>
+                <details><summary>{{ t('校验信息') }}</summary><code>SHA-256: {{ r.sha256 }}</code><small>{{ t('安全版本计数：') }}{{ r.security }}</small></details>
               </div>
             </article>
             <button v-if="historyMore" :disabled="busy" @click="olderReleases">
-              加载更早版本
+              {{ t('加载更早版本') }}
             </button>
           </section>
           <section v-else-if="section === 'devices'" class="card">
             <div class="card-heading">
-              <h2>客户端状态</h2>
+              <h2>{{ t('客户端状态') }}</h2>
               <button v-if="write" :disabled="busy" @click="clearStatus">
-                清除已保存状态
+                {{ t('清除已保存状态') }}
               </button>
             </div>
             <p v-if="!project.telemetry || !globalTelemetry" class="hint">
-              状态采集已关闭，设备仍可正常检查和下载固件。开启项目和全局开关后，还需客户端主动同意上报。
+              {{ t('状态采集已关闭，设备仍可正常检查和下载固件。开启项目和全局开关后，还需客户端主动同意上报。') }}
             </p>
             <p class="muted">
-              心跳建议 {{ project.heartbeat }} 秒 · 超过
-              {{ project.timeout }} 秒未收到心跳显示超时 · 每 15 秒刷新本页
+              {{ t('心跳建议') }} {{ project.heartbeat }} {{ t('秒 · 超过') }}
+              {{ project.timeout }} {{ t('秒未收到心跳显示超时 · 每 15 秒刷新本页') }}
             </p>
             <div v-if="!devices.length" class="empty">
-              <h3>尚未登记设备</h3>
-              <p>为每台设备分配独立凭据，避免设备之间互相覆盖状态。</p>
+              <h3>{{ t('尚未登记设备') }}</h3>
+              <p>{{ t('为每台设备分配独立凭据，避免设备之间互相覆盖状态。') }}</p>
             </div>
             <div v-else class="table-wrap mobile-records">
               <table class="devices-table">
                 <thead>
                   <tr>
-                    <th>设备</th>
-                    <th>在线状态</th>
-                    <th>最后上报版本</th>
-                    <th>升级状态</th>
-                    <th>最近心跳</th>
+                    <th>{{ t('设备') }}</th>
+                    <th>{{ t('在线状态') }}</th>
+                    <th>{{ t('最后上报版本') }}</th>
+                    <th>{{ t('升级状态') }}</th>
+                    <th>{{ t('最近心跳') }}</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="d in devices" :key="d.id">
-                    <td data-label="设备">
+                    <td :data-label="t('设备')">
                       <strong>{{ d.name }}</strong><small
                         >{{ d.platform || "—" }} / {{ d.arch || "—" }} /
                         {{ d.hardware || "—" }}</small
                       >
                     </td>
-                    <td data-label="在线状态">
+                    <td :data-label="t('在线状态')">
                       <span
                         class="badge"
                         :class="d.online_state === 'online' ? 'green' : 'gray'"
                         >{{ label(d.online_state) }}</span
                       >
                     </td>
-                    <td data-label="最后上报版本">
+                    <td :data-label="t('最后上报版本')">
                       <code>{{ d.version || "—" }}</code>
                     </td>
-                    <td data-label="升级状态">{{ label(d.status) }}</td>
-                    <td data-label="最近心跳">{{ date(d.last_seen) }}</td>
-                    <td data-label="信息">
+                    <td :data-label="t('升级状态')">{{ label(d.status) }}</td>
+                    <td :data-label="t('最近心跳')">{{ date(d.last_seen) }}</td>
+                    <td :data-label="t('信息')">
                       <button
                         v-if="write && !d.revoked"
                         class="danger-text"
                         :disabled="busy"
                         @click="revoke(d)"
                       >
-                        撤销凭据
+                        {{ t('撤销凭据') }}
                       </button>
                     </td>
                   </tr>
@@ -1123,30 +1120,29 @@ onUnmounted(() => {
               </table>
             </div>
             <p class="muted footnote">
-              状态由客户端自报，不等于硬件可信证明。关闭客户端上报后，已有记录会在超时后显示为心跳超时。
+              {{ t('状态由客户端自报，不等于硬件可信证明。关闭客户端上报后，已有记录会在超时后显示为心跳超时。') }}
             </p>
           </section>
           <section v-else-if="section === 'notifications'" class="card">
-            <h2>发布即提醒</h2>
+            <h2>{{ t('发布即提醒') }}</h2>
             <p class="muted">
-              通知只提示检查新版本，不直接执行安装。渠道留空即关闭。凭据留空保留原值，填写单个
-              - 清除。
+              {{ t('通知只提示检查新版本，不直接执行安装。渠道留空即关闭。凭据留空保留原值，填写单个\n              - 清除。') }}
             </p>
-            <p v-if="!owner" class="hint">只有项目所有者可以管理通知凭据。</p>
+            <p v-if="!owner" class="hint">{{ t('只有项目所有者可以管理通知凭据。') }}</p>
             <form v-else @submit.prevent="saveNotice">
               <div class="form-grid">
                 <label
-                  >Webhook 地址<input
+                  >{{ t('Webhook 地址') }}<input
                     v-model="notice.webhook"
                     placeholder="https://example.com/webhook" /></label
                 ><label
-                  >Webhook 签名密钥<input
+                  >{{ t('Webhook 签名密钥') }}<input
                     v-model="notice.webhook_secret"
                     type="password"
                     :placeholder="
                       notice.has_webhook_secret
-                        ? '已保存，留空不变'
-                        : '建议设置共享签名密钥'
+                        ? t('已保存，留空不变')
+                        : t('建议设置共享签名密钥')
                     "
                     autocomplete="new-password" /></label
                 ><label
@@ -1155,32 +1151,32 @@ onUnmounted(() => {
                     type="password"
                     :placeholder="
                       notice.has_telegram_token
-                        ? '已保存，留空不变'
-                        : '留空不启用'
+                        ? t('已保存，留空不变')
+                        : t('留空不启用')
                     "
                     autocomplete="new-password" /></label
                 ><label
                   >Telegram Chat ID<input
                     v-model="notice.telegram_chat"
-                    placeholder="会话 ID" /></label
+                    :placeholder="t('会话 ID')" /></label
                 ><label
                   >MQTT Broker<input
                     v-model="notice.mqtt_url"
                     placeholder="ssl://broker.example.com:8883" /></label
                 ><label
-                  >MQTT 主题<input
+                  >{{ t('MQTT 主题') }}<input
                     v-model="notice.mqtt_topic"
                     placeholder="firmware/project/available" /></label
                 ><label
-                  >MQTT 用户名<input
+                  >{{ t('MQTT 用户名') }}<input
                     v-model="notice.mqtt_user"
                     autocomplete="off" /></label
                 ><label
-                  >MQTT 密码<input
+                  >{{ t('MQTT 密码') }}<input
                     v-model="notice.mqtt_password"
                     type="password"
                     :placeholder="
-                      notice.has_mqtt_password ? '已保存，留空不变' : ''
+                      notice.has_mqtt_password ? t('已保存，留空不变') : ''
                     "
                     autocomplete="new-password"
                 /></label>
@@ -1189,15 +1185,14 @@ onUnmounted(() => {
                 ><input
                   v-model="notice.allow_private"
                   type="checkbox"
-                />允许访问内网通知目标，以及内网 HTTP / TCP（仅可信目标）</label
-              ><button class="primary" :disabled="busy">保存通知配置</button>
+                />{{ t('允许访问内网通知目标，以及内网 HTTP / TCP（仅可信目标）') }}</label
+              ><button class="primary" :disabled="busy">{{ t('保存通知配置') }}</button>
             </form>
           </section>
           <section v-else-if="section === 'logs'" class="card">
-            <h2>项目操作记录</h2>
+            <h2>{{ t('项目操作记录') }}</h2>
             <p class="muted">
-              记录操作账号、版本发布/撤回与设置变更；最近 200
-              条。账号署名不是数字签名。
+              {{ t('记录操作账号、版本发布/撤回与设置变更；最近 200\n              条。账号署名不是数字签名。') }}
             </p>
             <div v-for="a in audits" :key="a.id" class="list-row">
               <div>
@@ -1206,14 +1201,14 @@ onUnmounted(() => {
                 <small>{{ date(a.at) }}</small>
               </div>
             </div>
-            <h2>通知投递记录</h2>
+            <h2>{{ t('通知投递记录') }}</h2>
             <div v-if="!logs.length" class="empty">
-              暂无投递记录。发布版本并配置渠道后会在这里显示。
+              {{ t('暂无投递记录。发布版本并配置渠道后会在这里显示。') }}
             </div>
             <div v-for="l in logs" :key="l.id" class="list-row">
               <div>
                 <strong>{{ l.kind }}</strong><small
-                  >{{ date(l.created) }} · 已尝试 {{ l.attempts }} 次</small
+                  >{{ date(l.created) }} {{ t('· 已尝试') }} {{ l.attempts }} {{ t('次') }}</small
                 >
                 <p v-if="l.error" class="danger-text">{{ l.error }}</p>
               </div>
@@ -1225,21 +1220,21 @@ onUnmounted(() => {
             </div>
           </section>
           <section v-else-if="section === 'members'" class="card">
-            <h2>项目成员</h2>
+            <h2>{{ t('项目成员') }}</h2>
             <p class="muted">
-              维护者负责上传，审核者负责发布。所有者可同时完成两项操作。
+              {{ t('维护者负责上传，审核者负责发布。所有者可同时完成两项操作。') }}
             </p>
             <form v-if="owner" class="inline-form" @submit.prevent="saveMember">
               <input
                 v-model="memberName"
-                placeholder="已存在的用户名"
+                :placeholder="t('已存在的用户名')"
                 required
               /><select v-model="memberRole">
-                <option value="viewer">查看者</option>
-                <option value="maintainer">维护者</option>
-                <option value="reviewer">发布审核者</option>
-                <option value="remove">移除成员</option></select
-              ><button :disabled="busy">更新成员</button>
+                <option value="viewer">{{ t('查看者') }}</option>
+                <option value="maintainer">{{ t('维护者') }}</option>
+                <option value="reviewer">{{ t('发布审核者') }}</option>
+                <option value="remove">{{ t('移除成员') }}</option></select
+              ><button :disabled="busy">{{ t('更新成员') }}</button>
             </form>
             <div v-for="m in members" :key="m.id" class="list-row">
               <strong>{{ m.name }}</strong><span class="badge gray">{{
@@ -1248,19 +1243,19 @@ onUnmounted(() => {
             </div>
           </section>
           <section v-else-if="section === 'settings'" class="card">
-            <h2>项目设置</h2>
+            <h2>{{ t('项目设置') }}</h2>
             <form @submit.prevent="saveProject">
               <div class="form-grid">
                 <label
-                  >项目名称<input
+                  >{{ t('项目名称') }}<input
                     v-model="draft.name"
                     :disabled="!owner"
                     required
                     maxlength="100" /></label
-                ><label>项目标识<input :value="draft.slug" disabled /></label>
+                ><label>{{ t('项目标识') }}<input :value="draft.slug" disabled /></label>
               </div>
               <label
-                >项目介绍<textarea
+                >{{ t('项目介绍') }}<textarea
                   v-model="draft.description"
                   :disabled="!owner"
                   rows="3"
@@ -1271,31 +1266,30 @@ onUnmounted(() => {
                   v-model="draft.public"
                   type="checkbox"
                   :disabled="!owner"
-                />公开发布页和已发布文件（设备状态始终不公开）</label
+                />{{ t('公开发布页和已发布文件（设备状态始终不公开）') }}</label
               >
               <hr />
-              <h3>可选：设备状态通道</h3>
+              <h3>{{ t('可选：设备状态通道') }}</h3>
               <label class="check"
                 ><input
                   v-model="draft.telemetry"
                   type="checkbox"
                   :disabled="!owner"
-                />允许接收客户端当前版本、升级状态与心跳</label
+                />{{ t('允许接收客户端当前版本、升级状态与心跳') }}</label
               >
               <p class="muted">
-                默认关闭；不会采集 IP、用户名或设备序列号。Hub
-                总开关与客户端开关也必须允许。
+                {{ t('默认关闭；不会采集 IP、用户名或设备序列号。Hub\n                总开关与客户端开关也必须允许。') }}
               </p>
               <div class="form-grid">
                 <label
-                  >建议心跳间隔（秒）<input
+                  >{{ t('建议心跳间隔（秒）') }}<input
                     v-model.number="draft.heartbeat"
                     type="number"
                     min="15"
                     max="86400"
                     :disabled="!owner" /></label
                 ><label
-                  >离线判定超时（秒）<input
+                  >{{ t('离线判定超时（秒）') }}<input
                     v-model.number="draft.timeout"
                     type="number"
                     :min="draft.heartbeat * 2"
@@ -1304,39 +1298,39 @@ onUnmounted(() => {
                 /></label>
               </div>
               <hr />
-              <h3>发布保护</h3>
+              <h3>{{ t('发布保护') }}</h3>
               <p class="muted">
-                当前：{{
+                {{ t('当前：') }}{{
                   draft.public_key
-                    ? "高级数字签名模式"
-                    : "账号发布模式，无需 fwtool"
-                }}。账号模式信任服务器与账号权限，不能抵御服务器被入侵后替换更新。
+                    ? t('高级数字签名模式')
+                    : t('账号发布模式，无需 fwtool')
+                }}{{ t('。账号模式信任服务器与账号权限，不能抵御服务器被入侵后替换更新。') }}
               </p>
               <label
-                >高级签名公钥<input
+                >{{ t('高级签名公钥') }}<input
                   :value="draft.public_key"
                   readonly
                   class="mono"
               /></label>
               <p class="muted">
-                保留高级模式以兼容已有客户端；默认新项目不需要公钥或签名工具。
+                {{ t('保留高级模式以兼容已有客户端；默认新项目不需要公钥或签名工具。') }}
               </p>
               <button
                 v-if="owner && draft.public_key"
                 type="button"
                 @click="draft.public_key = ''"
               >
-                改为账号发布模式
+                {{ t('改为账号发布模式') }}
               </button>
               <label v-if="owner"
-                >项目发布密码（可选，留空关闭；不修改则不要输入）<input
+                >{{ t('项目发布密码（可选，留空关闭；不修改则不要输入）') }}<input
                   v-model="draft.publish_password"
                   type="password"
                   autocomplete="new-password"
                   :placeholder="
                     draft.has_publish_password
-                      ? '已启用，未修改则保持'
-                      : '未启用'
+                      ? t('已启用，未修改则保持')
+                      : t('未启用')
                   "
               /></label>
               <label
@@ -1345,21 +1339,21 @@ onUnmounted(() => {
                   (draft.publish_password !== undefined ||
                     draft.public_key !== project.public_key)
                 "
-                >验证当前账号密码<input
+                >{{ t('验证当前账号密码') }}<input
                   v-model="draft.account_password"
                   type="password"
                   autocomplete="current-password"
                   required
               /></label>
               <button v-if="owner" class="primary" :disabled="busy">
-                保存项目设置
+                {{ t('保存项目设置') }}
               </button>
             </form>
           </section>
         </template>
       </div>
       <footer class="site-footer">
-        © 2026 Firmware Hub contributors · MIT License <button type="button" data-about-open>关于与许可</button> <span>账号署名 / 按需连接</span>
+        © 2026 Firmware Hub contributors · MIT License <button type="button" data-about-open>{{ t('关于与许可') }}</button> <span>{{ t('账号署名 / 按需连接') }}</span>
       </footer>
     </div>
   </div>
@@ -1370,25 +1364,25 @@ onUnmounted(() => {
       aria-modal="true"
       :aria-label="
         modal === 'project'
-          ? '创建项目'
+          ? t('创建项目')
           : modal === 'release'
-            ? '上传版本'
-            : '添加设备'
+            ? t('上传版本')
+            : t('添加设备')
       "
     >
       <div class="card-heading">
         <h2>
           {{
             modal === "project"
-              ? "创建项目"
+              ? t('创建项目')
               : modal === "release"
-                ? "上传版本"
-                : "添加设备"
+                ? t('上传版本')
+                : t('添加设备')
           }}
         </h2>
         <button
           :disabled="busy"
-          title="关闭"
+          :title="t('关闭')"
           @click="
             modal = '';
             deviceToken = '';
@@ -1401,13 +1395,13 @@ onUnmounted(() => {
       <form v-if="modal === 'project'" @submit.prevent="createProject">
         <div class="form-grid">
           <label
-            >项目名称<input
+            >{{ t('项目名称') }}<input
               v-model="draft.name"
               required
               maxlength="100"
-              placeholder="例如：设备控制器" /></label
+              :placeholder="t('例如：设备控制器')" /></label
           ><label
-            >项目标识<input
+            >{{ t('项目标识') }}<input
               v-model="draft.slug"
               required
               pattern="[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}"
@@ -1415,139 +1409,137 @@ onUnmounted(() => {
           /></label>
         </div>
         <label
-          >介绍<textarea v-model="draft.description" rows="2"></textarea>
+          >{{ t('介绍') }}<textarea v-model="draft.description" rows="2"></textarea>
         </label>
         <details>
-          <summary>高级：独立数字签名（可选）</summary>
+          <summary>{{ t('高级：独立数字签名（可选）') }}</summary>
           <label
-            >Ed25519 公钥（64 位十六进制）<input
+            >{{ t('Ed25519 公钥（64 位十六进制）') }}<input
               v-model="draft.public_key"
               pattern="[0-9a-fA-F]{64}"
               class="mono"
-              placeholder="仅填写公钥，绝不上传私钥"
+              :placeholder="t('仅填写公钥，绝不上传私钥')"
           /></label>
           <p class="hint">
-            仅高级模式需要在本地运行
-            <code>fwtool keygen --out publisher.key</code>。私钥留在发布者本地。
+            {{ t('仅高级模式需要在本地运行') }}
+            <code>fwtool keygen --out publisher.key</code>{{ t('。私钥留在发布者本地。') }}
           </p>
         </details>
         <label
-          >项目发布密码（可选，12–72 字节）<input
+          >{{ t('项目发布密码（可选，12–72 字节）') }}<input
             v-model="draft.publish_password"
             type="password"
             autocomplete="new-password"
-            placeholder="留空不启用"
+            :placeholder="t('留空不启用')"
         /></label>
         <label class="check"
           ><input
             v-model="draft.telemetry"
             type="checkbox"
-          />启用可选的设备状态通道</label
+          />{{ t('启用可选的设备状态通道') }}</label
         ><label class="check"
           ><input
             v-model="draft.public"
             type="checkbox"
-          />公开已发布版本与下载</label
-        ><button class="primary" :disabled="busy">创建项目</button>
+          />{{ t('公开已发布版本与下载') }}</label
+        ><button class="primary" :disabled="busy">{{ t('创建项目') }}</button>
       </form>
       <form v-else-if="modal === 'release'" @submit.prevent="upload">
         <p class="muted">
-          上传后保存为草稿；发布时记录操作账号，不自动安装到客户端。
+          {{ t('上传后保存为草稿；发布时记录操作账号，不自动安装到客户端。') }}
         </p>
         <div v-if="!project?.public_key" class="form-grid">
           <label
-            >版本号<input
+            >{{ t('版本号') }}<input
               v-model="uploadMeta.version"
               required
               pattern="[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}"
               placeholder="1.2.0"
           /></label>
           <label
-            >更新方式<select v-model="uploadMeta.package_kind">
-              <option value="full">完整文件 / 软件整包</option>
-              <option value="file">按文件更新（DLL / EXE 等）</option>
+            >{{ t('更新方式') }}<select v-model="uploadMeta.package_kind">
+              <option value="full">{{ t('完整文件 / 软件整包') }}</option>
+              <option value="file">{{ t('按文件更新（DLL / EXE 等）') }}</option>
             </select></label
           >
           <template v-if="uploadMeta.package_kind === 'file'"
             ><label
-              >适用旧版本<input
+              >{{ t('适用旧版本') }}<input
                 v-model="uploadMeta.base_version"
                 required
                 placeholder="1.1.0" /></label
             ><label
-              >软件目录内目标路径<input
+              >{{ t('软件目录内目标路径') }}<input
                 v-model="uploadMeta.target_path"
                 required
-                placeholder="MyApp.exe 或 plugins/module.dll" /></label
+                :placeholder="t('MyApp.exe 或 plugins/module.dll')" /></label
           ></template>
         </div>
         <p v-if="!project?.public_key" class="hint">
-          整包可上传 windeployqt 生成目录的 ZIP（文件直接位于 ZIP
-          根目录）；也可直接上传设备
-          BIN。按文件更新只替换指定文件，不是二进制差分；仅向适用旧版本提供。
+          {{ t('整包可上传 windeployqt 生成目录的 ZIP（文件直接位于 ZIP\n          根目录）；也可直接上传设备\n          BIN。按文件更新只替换指定文件，不是二进制差分；仅向适用旧版本提供。') }}
         </p>
         <details v-if="!project?.public_key">
-          <summary>通道与兼容范围（可保持默认）</summary>
+          <summary>{{ t('通道与兼容范围（可保持默认）') }}</summary>
           <div class="form-grid">
-            <label>通道<input v-model="uploadMeta.channel" required /></label
-            ><label>平台<input v-model="uploadMeta.platform" required /></label
-            ><label>架构<input v-model="uploadMeta.arch" required /></label
+            <label>{{ t('通道') }}<input v-model="uploadMeta.channel" required /></label
+            ><label>{{ t('平台') }}<input v-model="uploadMeta.platform" required /></label
+            ><label>{{ t('架构') }}<input v-model="uploadMeta.arch" required /></label
             ><label
-              >硬件型号<input v-model="uploadMeta.hardware" required
+              >{{ t('硬件型号') }}<input v-model="uploadMeta.hardware" required
             /></label>
           </div>
         </details>
         <label v-if="project?.public_key"
-          >签名清单 manifest.json<input
+          >{{ t('签名清单 manifest.json') }}<input
             type="file"
             accept=".json"
             required
             @change="fileChange($event, 'manifest')" /></label
         ><label
-          >对应固件 / 软件文件<input
+          >{{ t('对应固件 / 软件文件') }}<input
             type="file"
             required
             @change="fileChange($event, 'artifact')" /></label
         ><label
-          >版本说明（Markdown）<textarea
+          >{{ t('版本说明（Markdown）') }}<textarea
             v-model="uploadNotes"
             rows="6"
             maxlength="32768"
-            placeholder="## 更新内容&#10;- 新增功能&#10;&#10;## 升级注意事项&#10;兼容型号与已知问题…"
+            :placeholder="t('## 更新内容\n- 新增功能\n\n## 升级注意事项\n兼容型号与已知问题…')"
           ></textarea>
         </label>
         <details class="editor-preview">
-          <summary>预览版本说明</summary>
+          <summary>{{ t('预览版本说明') }}</summary>
           <ReleaseNotes :notes="uploadNotes" />
         </details>
         <progress v-if="busy" :value="uploadProgress" max="100"></progress
         ><button class="primary" :disabled="busy">
-          {{ busy ? `上传并校验 ${uploadProgress}%` : "保存草稿" }}
+          {{ busy ? `上传并校验 ${uploadProgress}%` : t('保存草稿') }}
         </button>
       </form>
       <template v-else
         ><form v-if="!deviceToken" @submit.prevent="createDevice">
           <p class="muted">
-            每台设备使用独立凭据。设备名称由你指定，不自动推断用户名或地址。
+            {{ t('每台设备使用独立凭据。设备名称由你指定，不自动推断用户名或地址。') }}
           </p>
           <label
-            >设备名称<input
+            >{{ t('设备名称') }}<input
               v-model="deviceName"
               maxlength="100"
-              placeholder="例如：测试终端 01"
+              :placeholder="t('例如：测试终端 01')"
               required /></label
-          ><button class="primary" :disabled="busy">创建访问凭据</button>
+          ><button class="primary" :disabled="busy">{{ t('创建访问凭据') }}</button>
         </form>
         <div v-else>
           <p class="hint">
-            凭据仅显示这一次。可用于本项目更新检测、下载和可选心跳。
+            {{ t('凭据仅显示这一次。可用于本项目更新检测、下载和可选心跳。') }}
           </p>
           <code class="token">{{ deviceToken }}</code><button
             @click="copy(deviceToken)"
           >
-            复制凭据
+            {{ t('复制凭据') }}
           </button>
-          <p class="muted">不要写进公开仓库、截图或公开发布页。</p>
+          <p class="muted">{{ t('不要写进公开仓库、截图或公开发布页。') }}</p>
         </div></template
       >
     </section>

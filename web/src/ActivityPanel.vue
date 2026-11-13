@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from "./i18n";
 import { ref, onMounted } from "vue";
 const props = defineProps<{
   request: (path: string, options?: RequestInit) => Promise<any>;
@@ -68,46 +69,44 @@ onMounted(load);
 <template>
   <section class="card activity-panel">
     <div class="card-heading">
-      <h2>{{ all ? "账号登录与会话" : "我的登录与会话" }}</h2>
-      <button :disabled="busy" @click="load">刷新记录</button>
+      <h2>{{ all ? t('账号登录与会话') : t('我的登录与会话') }}</h2>
+      <button :disabled="busy" @click="load">{{ t('刷新记录') }}</button>
     </div>
     <p class="muted">
-      “最近活跃”指 15
-      分钟内有网页请求，不代表持续在线。来源是服务器直连地址；反向代理后可能显示代理地址。登录记录保留
-      90 天、最多 5000 条，这里显示最近 100 条。
+      {{ t('“最近活跃”指 15\n      分钟内有网页请求，不代表持续在线。来源是服务器直连地址；反向代理后可能显示代理地址。登录记录保留\n      90 天、最多 5000 条，这里显示最近 100 条。') }}
     </p>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
-    <h3>未过期的登录会话</h3>
+    <h3>{{ t('未过期的登录会话') }}</h3>
     <p v-if="!sessions.length" class="muted">
-      没有可显示的会话记录；旧会话将在下次登录后登记。
+      {{ t('没有可显示的会话记录；旧会话将在下次登录后登记。') }}
     </p>
     <article v-for="s in sessions" :key="s.id" class="list-row">
       <div>
         <strong
           >{{ s.name }}
           <span class="badge" :class="s.active ? 'green' : 'gray'">{{
-            s.current ? "当前会话" : s.active ? "最近活跃" : "未活跃"
+            s.current ? t('当前会话') : s.active ? t('最近活跃') : t('未活跃')
           }}</span></strong
-        ><small>{{ s.peer }} · 最近访问 {{ date(s.last_seen) }}</small
-        ><small>{{ s.agent || "未知客户端" }}</small
-        ><small>登录 {{ date(s.created) }} · 到期 {{ date(s.expires) }}</small>
+        ><small>{{ s.peer }} {{ t('· 最近访问') }} {{ date(s.last_seen) }}</small
+        ><small>{{ s.agent || t('未知客户端') }}</small
+        ><small>{{ t('登录') }} {{ date(s.created) }} {{ t('· 到期') }} {{ date(s.expires) }}</small>
       </div>
-      <button :disabled="busy" @click="revoke(s)">退出此会话</button>
+      <button :disabled="busy" @click="revoke(s)">{{ t('退出此会话') }}</button>
     </article>
     <details>
-      <summary>登录历史（{{ history.length }}）</summary>
+      <summary>{{ t('登录历史（') }}{{ history.length }}）</summary>
       <article v-for="h in history" :key="h.id" class="list-row">
         <div>
-          <strong>{{ h.name || "未知账号" }}</strong><small
+          <strong>{{ h.name || t('未知账号') }}</strong><small
             >{{ date(h.at) }} · {{ h.peer }}</small
-          ><small>{{ h.agent || "未知客户端" }}</small>
+          ><small>{{ h.agent || t('未知客户端') }}</small>
         </div>
         <span class="badge" :class="h.success ? 'green' : 'gray'">{{
           h.success
-            ? "成功"
+            ? t('成功')
             : h.reason === "invalid_otp"
-              ? "验证码失败"
-              : "登录失败"
+              ? t('验证码失败')
+              : t('登录失败')
         }}</span>
       </article>
     </details>
