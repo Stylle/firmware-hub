@@ -1,0 +1,13 @@
+.git
+.local
+**/.local
+data
+build
+dist
+web/node_modules
+*.key
+*.seed
+*.pem
+*.p12
+*.pfx
+*.exe

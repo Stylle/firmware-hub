@@ -1,0 +1,67 @@
+name: Verify and publish
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci && npm run build && npm audit --omit=dev
+        working-directory: web
+      - run: go test -race -timeout 180s ./... && go vet ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - run: sh tests/sdk.sh
+      - name: Native Qt build
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qtbase5-dev qt5-qmake
+          mkdir -p build/qt
+          cd build/qt
+          qmake ../../examples/qt/hub-demo.pro
+          make -j2
+      - name: Build and verify container
+        run: |
+          set -eu
+          docker build -t firmware-hub:test .
+          docker run -d --name firmware-hub-check -e USER=admin -e PASSWORD=Temporary-CI-Only-Password -p 127.0.0.1:28183:8080 -v hub-check:/data firmware-hub:test
+          trap 'docker rm -f firmware-hub-check; docker volume rm hub-check' EXIT
+          for n in $(seq 1 30); do curl -fsS http://127.0.0.1:28183/healthz && break || sleep 1; done
+          curl -fsS http://127.0.0.1:28183/healthz | grep '"status":"ok"'
+          test "$(docker exec firmware-hub-check awk '/^Uid:/ {print $2}' /proc/1/status)" = 10001
+          docker restart firmware-hub-check
+          for n in $(seq 1 30); do curl -fsS http://127.0.0.1:28183/healthz && break || sleep 1; done
+  publish:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: stylle/firmware-hub:latest,stylle/firmware-hub:${{ github.ref_name }}
+          sbom: true
+          provenance: mode=max

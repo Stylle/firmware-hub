@@ -1,0 +1,10 @@
+* text=auto
+*.sh text eol=lf
+*.go text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.vue text eol=lf
+*.yml text eol=lf
+Dockerfile text eol=lf

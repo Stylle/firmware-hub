@@ -1,0 +1,77 @@
+# Firmware Hub
+
+轻量固件与软件分发中心。适用于嵌入式设备、Qt 上位机和其他可通过 HTTP(S) 接入的客户端。
+
+## 最简部署
+
+修改密码和数据目录后，在 NAS 的 Compose 项目或普通 Docker 中部署：
+
+```yaml
+services:
+  firmware-hub:
+    image: stylle/firmware-hub:latest
+    container_name: firmware-hub
+    restart: unless-stopped
+    environment:
+      - USER=admin # 首次必填：管理员用户名
+      - PASSWORD=请替换为至少12字节的强密码 # 首次必填：12–72 字节
+    ports:
+      - "28183:8080" # 左侧可修改；公网请使用 HTTPS 反向代理
+    volumes:
+      - ./data:/data # 必须持久化；左侧可换为 NAS 独立目录
+```
+
+打开 `http://服务器地址:28183`。不需要 `.env`、Setup Token、特权模式或 Docker Socket。
+
+首次创建账号后，`USER/PASSWORD` 不再覆盖已有账户，可以移除 `PASSWORD`。重置时在 Compose 填入新值，然后执行：
+
+```sh
+docker compose run --rm firmware-hub admin-sync
+```
+
+该命令重置指定管理员、移除该账号的 TOTP 绑定，并撤销所有网页会话。环境变量只用于初始化/此维护命令，不是持续生效的密码配置。
+
+## 已实现
+
+- 多用户、可选 TOTP 验证器登录、独立项目、维护/审核/查看权限。
+- 本地 Ed25519 签名发布；版本、通道、平台、架构、型号筛选。
+- 草稿、发布、撤回、历史列表、兼容更新检测。
+- 流式上传下载、SHA-256、HTTP Range / ETag。
+- 可选设备当前版本、最近心跳及升级状态；客户端和 Hub 可独立关闭。
+- MQTT 更新提醒、HMAC Webhook、Telegram 发布通知、重试记录。
+- 安全 Markdown 发布说明、可选公开发布页。
+- C99 / C++17 SDK、Qt 5.14+ / Qt 6 参考客户端。
+- 单容器、SQLite、本地存储、NAS 独立目录初始化、离线备份命令。
+
+## 开始发布
+
+```sh
+go build -o fwtool ./cmd/fwtool
+fwtool keygen --out publisher.key
+```
+
+在网页创建项目，只填写输出的**公钥**。再签名文件：
+
+```sh
+fwtool sign --key publisher.key --file firmware.bin --project controller \
+  --version 1.0.0 --sequence 1 --security 0 \
+  --platform any --arch any --hardware board-a --out manifest.json
+```
+
+上传 `manifest.json` 和对应文件，填写版本说明，审核后发布。版本号在签名前确定；网页不重签、不接收私钥。
+
+## 文档
+
+- [部署、备份与更新](docs/deployment.md)
+- [接口与设备状态](docs/api.md)
+- [SDK 与 Qt 示例](docs/sdk.md)
+- [安全边界和 FH1 格式](docs/security.md)
+- [开发计划与兼容范围](docs/roadmap.md)
+
+## 安全边界
+
+这是 **0.x 首版**。FH1 是明确版本化的签名清单格式，**不宣称完整 TUF、SUIT 或 LwM2M 兼容**。完整信任根轮换、多签和特殊协议适配见开发计划。
+
+签名私钥必须独立保管；客户端必须预置公钥、独立验签并维护可信时间与防回滚状态。服务端被入侵仍可能造成停服、数据泄露或阻断更新。状态由客户端自报，不是硬件可信证明。下载完成不等于安装成功。
+
+SDK 不执行远程命令，不自动刷写任意硬件。真实安装应接入设备自身的安全启动、分区与启动确认机制。

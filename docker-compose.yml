@@ -1,0 +1,13 @@
+services:
+  firmware-hub:
+    image: stylle/firmware-hub:latest
+    container_name: firmware-hub
+    restart: unless-stopped
+    environment:
+      - USER=admin # 必填：首次创建的管理员用户名；后续修改不覆盖已有账号
+      - PASSWORD=请替换为至少12字节的强密码 # 首次必填，12–72 字节；初始化后可移除
+      # - TZ=Asia/Shanghai # 可省略，默认 Asia/Shanghai
+    ports:
+      - "28183:8080" # 左侧可修改；公网部署请通过 HTTPS 反向代理访问
+    volumes:
+      - ./data:/data # 必须持久化；左侧可改为 NAS 的独立数据目录

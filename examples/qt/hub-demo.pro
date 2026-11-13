@@ -1,0 +1,9 @@
+QT += core gui widgets network
+CONFIG += c++17 object_parallel_to_source
+TEMPLATE = app
+TARGET = firmware-hub-demo
+INCLUDEPATH += ../../sdk/c ../../sdk/cpp ../../sdk/third_party/monocypher/src ../../sdk/third_party/monocypher/src/optional
+SOURCES += main.cpp hub_client.cpp ../../sdk/c/fw_client.c ../../sdk/cpp/fw_client.cpp ../../sdk/third_party/monocypher/src/monocypher.c ../../sdk/third_party/monocypher/src/optional/monocypher-ed25519.c
+HEADERS += hub_client.hpp download_task.hpp ../../sdk/c/fw_client.h ../../sdk/cpp/fw_client.hpp
+QMAKE_CXXFLAGS += -Wall -Wextra
+QMAKE_CFLAGS += -Wall -Wextra
