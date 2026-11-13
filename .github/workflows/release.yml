@@ -46,7 +46,7 @@ jobs:
           docker restart firmware-hub-check
           for n in $(seq 1 30); do curl -fsS http://127.0.0.1:28183/healthz && break || sleep 1; done
       - name: Dedicated NAS bind permissions
-        run: sh tests/container.sh firmware-hub:test
+        run: sudo sh tests/container.sh firmware-hub:test
   publish:
     needs: verify
     if: startsWith(github.ref, 'refs/tags/')

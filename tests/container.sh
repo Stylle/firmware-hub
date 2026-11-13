@@ -1,6 +1,10 @@
 #!/bin/sh
 # Run against a disposable Docker engine test scope; never use production data.
 set -eu
+if [ "$(id -u)" != 0 ]; then
+ echo 'Run this disposable ownership test as root (sudo sh tests/container.sh IMAGE).'
+ exit 2
+fi
 image=${1:-firmware-hub:local}
 work=$(mktemp -d /tmp/firmware-hub-container-XXXXXX)
 cleanup() {
