@@ -77,6 +77,7 @@ const projects = ref<Project[]>([]),
   logs = ref<Log[]>([]),
   members = ref<{ id: number; name: string; role: string }[]>([]),
   users = ref<User[]>([]);
+const historyMore = ref(false);
 const loginName = ref("admin"),
   loginPassword = ref(""),
   loginOTP = ref(""),
@@ -248,24 +249,67 @@ async function refresh() {
   if (!p) return;
   const id = p.id;
   const [rs, ds] = await Promise.all([
-    api<Release[]>(`/projects/${id}/releases`),
+    api<Release[]>(`/projects/${id}/releases?limit=20`),
     api<Device[]>(`/projects/${id}/devices`),
   ]);
   if (selected.value !== id) return;
   releases.value = rs;
+  historyMore.value = rs.length === 20;
   devices.value = ds;
   draft.value = { ...p };
 }
 async function choose(id: number) {
+  if (busy.value) return;
   selected.value = id;
+  releases.value = [];
+  devices.value = [];
+  logs.value = [];
+  members.value = [];
   await run(async () => {
     await refresh();
     await loadSection();
   });
 }
 async function navigate(s: string) {
+  if (busy.value) return;
   section.value = s;
   await run(loadSection);
+}
+async function refreshAll() {
+  await loadProjects();
+  await loadSection();
+}
+async function refreshDevices() {
+  const id = selected.value;
+  if (!id) return;
+  const [ds, s, ps] = await Promise.all([
+    api<Device[]>(`/projects/${id}/devices`),
+    api<{ telemetry: boolean }>("/settings"),
+    api<Project[]>("/projects"),
+  ]);
+  if (selected.value !== id || section.value !== "devices") return;
+  devices.value = ds;
+  globalTelemetry.value = s.telemetry;
+  projects.value = ps;
+}
+async function olderReleases() {
+  await run(async () => {
+    const last = releases.value.at(-1);
+    if (!last) return;
+    if (publicSlug) {
+      const page = await api<{ releases: Release[] }>(
+        `/public/${encodeURIComponent(publicSlug)}?limit=20&before=${last.sequence}`,
+      );
+      releases.value.push(...page.releases);
+      historyMore.value = page.releases.length === 20;
+    } else {
+      const page = await api<Release[]>(
+        `/projects/${project.value!.id}/releases?limit=20&before=${last.sequence}`,
+      );
+      releases.value.push(...page);
+      historyMore.value = page.length === 20;
+    }
+  });
 }
 async function loadSection() {
   if (section.value === "system" && user.value?.admin) {
@@ -504,9 +548,10 @@ onMounted(async () => {
       const p = await api<{
         project: { name: string; slug: string; description: string };
         releases: Release[];
-      }>(`/public/${encodeURIComponent(publicSlug)}`);
+      }>(`/public/${encodeURIComponent(publicSlug)}?limit=20`);
       publicProject.value = p.project;
       releases.value = p.releases;
+      historyMore.value = p.releases.length === 20;
       return;
     }
     const s = await api<{ authenticated: boolean; user?: User }>("/session");
@@ -523,7 +568,7 @@ onMounted(async () => {
       !busy.value &&
       !document.hidden
     )
-      refresh().catch(() => {});
+      refreshDevices().catch(() => {});
   }, 15000);
 });
 onUnmounted(() => {
@@ -563,6 +608,9 @@ onUnmounted(() => {
         </p>
       </details>
     </article>
+    <button v-if="historyMore" :disabled="busy" @click="olderReleases">
+      加载更早版本
+    </button>
   </main>
   <main v-else-if="!user" class="login-page">
     <section class="login-story">
@@ -691,7 +739,7 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="row">
-            <button :disabled="busy" @click="run(refresh)">↻ 刷新</button
+            <button :disabled="busy" @click="run(refreshAll)">↻ 刷新</button
             ><button
               v-if="section === 'releases' && project && write"
               class="primary"
@@ -833,7 +881,7 @@ onUnmounted(() => {
           >
             <article>
               <span>{{
-                section === "devices" ? "已登记设备" : "版本记录"
+                section === "devices" ? "已加载设备" : "已加载版本"
               }}</span><strong>{{
                 section === "devices" ? devices.length : releases.length
               }}</strong
@@ -841,7 +889,7 @@ onUnmounted(() => {
             </article>
             <article>
               <span>{{
-                section === "devices" ? "最近心跳在线" : "已发布版本"
+                section === "devices" ? "加载设备在线" : "其中已发布"
               }}</span><strong>{{
                 section === "devices"
                   ? online
@@ -910,6 +958,9 @@ onUnmounted(() => {
                 </details>
               </div>
             </article>
+            <button v-if="historyMore" :disabled="busy" @click="olderReleases">
+              加载更早版本
+            </button>
           </section>
           <section v-else-if="section === 'devices'" class="card">
             <div class="card-heading">

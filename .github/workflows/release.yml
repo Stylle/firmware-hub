@@ -45,6 +45,8 @@ jobs:
           test "$(docker exec firmware-hub-check awk '/^Uid:/ {print $2}' /proc/1/status)" = 10001
           docker restart firmware-hub-check
           for n in $(seq 1 30); do curl -fsS http://127.0.0.1:28183/healthz && break || sleep 1; done
+      - name: Dedicated NAS bind permissions
+        run: sh tests/container.sh firmware-hub:test
   publish:
     needs: verify
     if: startsWith(github.ref, 'refs/tags/')

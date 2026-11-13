@@ -52,6 +52,8 @@ Windows MinGW 使用 `mingw32-make`。工程设置 `object_parallel_to_source`�
 
 界面配置服务地址、项目、公钥、设备凭据、当前版本与型号。设备凭据不持久化；非敏感配置及防回放状态使用 QSettings 保存。测试可用 `FH_STATE_DIR` 指定独立本地状态目录。
 
+本地示例可使用“导入连接配置”选择 `scripts/seed-demo.mjs` 生成的 `.local/demo.json`。该文件包含设备访问凭据，不要上传 Git 或对外分享。防回放状态按项目、公钥、通道和设备类别隔离，不因更换同一项目的服务器地址而重置。
+
 Qt 下载先验证签名和兼容性，再写入 QSaveFile，完整摘要校验通过才原子提交。取消、TLS 失败或摘要不符不会替换原目标文件。网络中断时固定已验证文件的 ETag 和已收字节续传；进程退出后不保留可恢复下载任务。
 
 Qt 示例不跟随下载重定向，不把 Token 发往其他源。HTTP 仅允许回环测试；HTTPS 校验证书与主机名。私有 CA 可在集成时设置 `Config.trustedCAFile`；测试模式支持 `FH_CA_FILE`，不信任从 Hub 下载的 CA，不调用 `ignoreSslErrors()`。
