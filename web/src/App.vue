@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
 import ActivityPanel from "./ActivityPanel.vue";
+import AppearanceControls from "./AppearanceControls.vue";
 type User = { id: number; name: string; admin: boolean; csrf: string };
 type Project = {
   id: number;
@@ -88,6 +89,15 @@ const projects = ref<Project[]>([]),
   logs = ref<Log[]>([]),
   members = ref<{ id: number; name: string; role: string }[]>([]),
   users = ref<User[]>([]);
+const releaseQuery = ref("");
+const releaseStatus = ref("all");
+const filteredReleases = computed(() => {
+ const query = releaseQuery.value.trim().toLocaleLowerCase();
+ return releases.value.filter(r =>
+  (releaseStatus.value === "all" || (releaseStatus.value === "published" ? r.published : !r.published)) &&
+  (!query || [r.version, r.file_name, r.platform, r.arch, r.hardware].join(" ").toLocaleLowerCase().includes(query))
+ );
+});
 const historyMore = ref(false);
 const audits = ref<{ id: number; name: string; action: string; at: number }[]>(
   [],
@@ -640,7 +650,7 @@ onUnmounted(() => {
 <template>
   <div v-if="!ready" class="loading">Firmware Hub · 正在连接</div>
   <main v-else-if="publicMode" class="public-page">
-    <a class="brand" href="/"><img src="/icon.svg" alt="" /> Firmware Hub</a>
+    <div class="row"><a class="brand" href="/"><img src="/icon.svg" alt="" /> Firmware Hub</a><span class="spacer"></span><AppearanceControls /></div>
     <div class="row">
       <a href="/?public">所有公开项目</a><span class="spacer"></span
       ><a href="/">管理登录 →</a>
@@ -702,7 +712,7 @@ onUnmounted(() => {
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
       <div>
         <span class="eyebrow">BUILD. RELEASE. DELIVER.</span>
-        <h1>每一次更新，<br />都有可信的起点。</h1>
+        <h1>固件与软件<br />更新中心。</h1>
         <p>
           面向设备与应用的轻量分发中心。<br />版本、发布与设备状态，在同一个地方。
         </p>
@@ -713,7 +723,7 @@ onUnmounted(() => {
       </div>
       <small>清晰发布 · 轻量交付</small>
     </section>
-    <section class="login-form">
+    <section class="login-form"><AppearanceControls />
       <span class="eyebrow">WELCOME BACK</span>
       <h2>登录工作空间</h2>
       <p class="muted">使用管理员或项目成员账号继续。</p>
@@ -750,10 +760,11 @@ onUnmounted(() => {
       >
     </section>
   </main>
-  <div v-else class="shell">
-    <aside class="sidebar">
+  <div v-else class="shell" data-drawer-host>
+    <button class="drawer-backdrop" type="button" data-drawer-close aria-label="关闭导航"></button>
+    <aside id="hub-nav" class="sidebar" data-drawer aria-label="工作空间导航"><button class="drawer-close" type="button" data-drawer-close>关闭导航</button>
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
-      <div class="space-label">工作空间 <span>v0.2</span></div>
+      <div class="space-label">工作空间 <span>v0.3</span></div>
       <button
         class="new-project"
         @click="
@@ -801,7 +812,7 @@ onUnmounted(() => {
       </div>
     </aside>
     <div class="workspace">
-      <header class="topbar">
+      <header class="topbar"><button class="drawer-toggle" type="button" data-drawer-toggle aria-controls="hub-nav" aria-expanded="false" aria-label="展开导航">☰</button><AppearanceControls />
         <span class="muted"
           >工作空间 / {{ project?.name || "开始" }} /
           <b>{{
@@ -820,7 +831,7 @@ onUnmounted(() => {
               {{
                 section === "devices"
                   ? "只采集你明确允许的状态，在线以最近一次心跳为准。"
-                  : "让每一个版本，从发布到交付都清晰可追踪。"
+                  : "管理版本发布、设备状态与通知。"
               }}
             </p>
           </div>
@@ -952,7 +963,7 @@ onUnmounted(() => {
           <div class="empty-icon">▣</div>
           <h2>从一个项目开始</h2>
           <p>
-            在发布者本地生成签名密钥，再把公钥填入项目。Hub 不需要你的私钥。
+            创建项目后上传文件、填写版本与更新说明。默认按账号记录发布责任；数字签名可在项目设置中按需启用。
           </p>
           <button
             class="primary"
@@ -962,7 +973,7 @@ onUnmounted(() => {
             "
           >
             创建第一个项目</button
-          ><code>fwtool keygen --out publisher.key</code>
+          ><small class="muted">普通账号发布无需安装 fwtool。</small>
         </section>
         <template v-else>
           <div
@@ -1018,49 +1029,29 @@ onUnmounted(() => {
               <h3>还没有发布版本</h3>
               <p>上传固件、软件整包或单个文件，填写版本说明后发布。</p>
             </div>
-            <article v-for="r in releases" :key="r.id" class="release">
-              <div class="row">
-                <span class="version-mark">↥</span>
-                <h3>{{ r.version }}</h3>
-                <span class="badge">{{ r.channel }}</span><span
-                  class="badge"
-                  :class="r.published ? 'green' : 'gray'"
-                  >{{ r.published ? "已发布" : "草稿 / 已撤回" }}</span
-                ><span class="spacer"></span
-                ><small class="muted">{{ date(r.created) }}</small>
+            <div class="release-toolbar">
+              <label>搜索已加载版本<input v-model="releaseQuery" type="search" placeholder="版本、文件、平台或型号" /></label>
+              <label>发布状态<select v-model="releaseStatus"><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿 / 已撤回</option></select></label>
+              <p class="muted">显示 {{ filteredReleases.length }} / 已加载 {{ releases.length }} 条；更早记录请继续加载。</p>
+            </div>
+            <p v-if="releases.length && !filteredReleases.length" class="muted" role="status">已加载版本中没有匹配项。可调整筛选或加载更早版本。</p>
+            <article v-for="r in filteredReleases" :key="r.id" class="release">
+              <div class="release-summary">
+                <div><small>版本</small><h3>{{ r.version }}</h3><span class="badge">{{ r.channel }}</span></div>
+                <div><small>文件 / 平台</small><strong>{{ r.file_name }}</strong><span>{{ r.platform }} / {{ r.arch }} · {{ r.hardware }}</span></div>
+                <div><small>大小 / 创建时间</small><span>{{ size(r.size) }}</span><time>{{ date(r.created) }}</time></div>
+                <div><small>状态</small><span class="badge" :class="r.published ? 'green' : 'gray'">{{ r.published ? "已发布" : "草稿 / 已撤回" }}</span></div>
               </div>
-              <p class="muted">
-                {{ r.platform }} / {{ r.arch }} · {{ r.hardware }} ·
-                {{ size(r.size) }} · 发布序号 {{ r.sequence }}
-              </p>
-              <ReleaseNotes :notes="r.notes" />
-              <p class="muted">
-                {{
-                  r.package_kind === "file" ? "按文件更新" : "完整文件 / 整包"
-                }}
-                · {{ r.file_name
-                }}<span v-if="r.base_version">
-                  · {{ r.base_version }} → {{ r.target_path }}</span
-                ><br />上传：{{ r.uploaded_by }} · 发布：{{
-                  r.published_by || "尚未发布"
-                }}<span v-if="r.published_at">
-                  · {{ date(r.published_at) }}</span
-                >
-              </p>
+              <details class="release-details">
+                <summary>更新说明与发布信息</summary>
+                <ReleaseNotes :notes="r.notes" />
+                <p class="muted">{{ r.package_kind === "file" ? "按文件更新" : "完整文件 / 整包" }} · 发布序号 {{ r.sequence }}<span v-if="r.base_version"> · {{ r.base_version }} → {{ r.target_path }}</span></p>
+                <p class="muted">上传：{{ r.uploaded_by }} · 发布：{{ r.published_by || "尚未发布" }}<span v-if="r.published_at"> · {{ date(r.published_at) }}</span></p>
+              </details>
               <div class="row">
-                <a class="button" :href="r.download">下载 ↓</a
-                ><button
-                  v-if="publish"
-                  :disabled="busy"
-                  @click="toggleRelease(r)"
-                >
-                  {{ r.published ? "撤回版本" : "发布版本" }}
-                </button>
-                <details>
-                  <summary>校验信息</summary>
-                  <code>SHA-256: {{ r.sha256 }}</code
-                  ><small>安全版本计数：{{ r.security }}</small>
-                </details>
+                <a class="button primary" :href="r.download">下载文件</a>
+                <button v-if="publish" :disabled="busy" @click="toggleRelease(r)">{{ r.published ? "撤回版本" : "发布版本" }}</button>
+                <details><summary>校验信息</summary><code>SHA-256: {{ r.sha256 }}</code><small>安全版本计数：{{ r.security }}</small></details>
               </div>
             </article>
             <button v-if="historyMore" :disabled="busy" @click="olderReleases">
@@ -1085,7 +1076,7 @@ onUnmounted(() => {
               <h3>尚未登记设备</h3>
               <p>为每台设备分配独立凭据，避免设备之间互相覆盖状态。</p>
             </div>
-            <div v-else class="table-wrap">
+            <div v-else class="table-wrap mobile-records">
               <table class="devices-table">
                 <thead>
                   <tr>
@@ -1099,7 +1090,7 @@ onUnmounted(() => {
                 </thead>
                 <tbody>
                   <tr v-for="d in devices" :key="d.id">
-                    <td>
+                    <td data-label="设备">
                       <strong>{{ d.name }}</strong><small
                         >{{ d.platform || "—" }} / {{ d.arch || "—" }} /
                         {{ d.hardware || "—" }}</small
@@ -1117,7 +1108,7 @@ onUnmounted(() => {
                     </td>
                     <td data-label="升级状态">{{ label(d.status) }}</td>
                     <td data-label="最近心跳">{{ date(d.last_seen) }}</td>
-                    <td>
+                    <td data-label="信息">
                       <button
                         v-if="write && !d.revoked"
                         class="danger-text"
@@ -1367,8 +1358,8 @@ onUnmounted(() => {
           </section>
         </template>
       </div>
-      <footer class="page-footer">
-        Firmware Hub · 清晰发布，轻量交付 <span>账号署名 / 按需连接</span>
+      <footer class="site-footer">
+        © 2026 Firmware Hub contributors · MIT License <button type="button" data-about-open>关于与许可</button> <span>账号署名 / 按需连接</span>
       </footer>
     </div>
   </div>

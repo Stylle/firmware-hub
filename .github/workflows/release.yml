@@ -23,6 +23,7 @@ jobs:
           node-version: 24
       - run: npm ci && npm run build && npm audit --omit=dev
         working-directory: web
+      - run: node --test tests/appearance.test.cjs
       - run: go test -race -timeout 180s ./... && go vet ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - run: sh tests/sdk.sh
