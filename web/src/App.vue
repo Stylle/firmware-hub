@@ -760,7 +760,7 @@ onUnmounted(() => {
   </main>
   <div v-else class="shell" data-drawer-host>
     <button class="drawer-backdrop" type="button" data-drawer-close :aria-label="t('关闭导航')"></button>
-    <aside id="hub-nav" class="sidebar" data-drawer :aria-label="t('工作空间导航')"><button class="drawer-close" type="button" data-drawer-close>{{ t('关闭导航') }}</button>
+    <aside id="hub-nav" class="sidebar" data-drawer :aria-label="t('工作空间导航')">
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
       <div class="space-label">{{ t('工作空间') }} <span>v0.4</span></div>
       <button
