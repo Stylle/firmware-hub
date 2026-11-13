@@ -981,7 +981,7 @@ onUnmounted(() => {
               <p>为每台设备分配独立凭据，避免设备之间互相覆盖状态。</p>
             </div>
             <div v-else class="table-wrap">
-              <table>
+              <table class="devices-table">
                 <thead>
                   <tr>
                     <th>设备</th>
@@ -1000,18 +1000,18 @@ onUnmounted(() => {
                         {{ d.hardware || "—" }}</small
                       >
                     </td>
-                    <td>
+                    <td data-label="在线状态">
                       <span
                         class="badge"
                         :class="d.online_state === 'online' ? 'green' : 'gray'"
                         >{{ label(d.online_state) }}</span
                       >
                     </td>
-                    <td>
+                    <td data-label="最后上报版本">
                       <code>{{ d.version || "—" }}</code>
                     </td>
-                    <td>{{ label(d.status) }}</td>
-                    <td>{{ date(d.last_seen) }}</td>
+                    <td data-label="升级状态">{{ label(d.status) }}</td>
+                    <td data-label="最近心跳">{{ date(d.last_seen) }}</td>
                     <td>
                       <button
                         v-if="write && !d.revoked"
