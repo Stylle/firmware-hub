@@ -3,12 +3,12 @@
   "components": [
     {
       "name": "theme",
-      "version": "2026-11-14",
+      "version": "2026-11-14.2",
       "source": "web/src/design-system.css",
       "mirrors": [
         "web/public/design-system.css"
       ],
-      "sha256": "27ad832e8fcae3fe1d276b3d659f55c9b485e6e9d7e69b9016cbba7ae91f595a"
+      "sha256": "3330ab93fb1f97eb1d174f639e61a4e78aef0f325e6fec1ef016a356fda41f06"
     },
     {
       "name": "portable-backup",

@@ -13,6 +13,14 @@ const user = ref<User | null>(null),
   message = ref(""),
   error = ref(""),
   section = ref("releases");
+const hubConnected = ref(true);
+async function checkConnection() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try { hubConnected.value = (await fetch('/healthz', {cache:'no-store',signal:controller.signal})).ok; }
+  catch { hubConnected.value = false; }
+  finally { clearTimeout(timeout); }
+}
 const projects = ref<Project[]>([]),
   selected = ref<number | null>(null),
   releases = ref<Release[]>([]),
@@ -54,6 +62,7 @@ const loginName = ref("admin"),
   manifestFile = ref<File | null>(null),
   artifactFile = ref<File | null>(null),
   uploadProgress = ref(0);
+const passwordCurrent = ref(""), passwordNew = ref(""), passwordConfirm = ref(""), passwordOTP = ref("");
 const mfaEnabled = ref(false),
   mfaPassword = ref(""),
   mfaCode = ref(""),
@@ -211,6 +220,8 @@ async function logout() {
     devices.value = [];
     deviceToken.value = "";
     modal.value = "";
+    passwordCurrent.value = passwordNew.value = passwordConfirm.value = passwordOTP.value = "";
+    mfaPassword.value = mfaCode.value = mfaSecret.value = mfaQR.value = "";
   });
 }
 async function loadProjects() {
@@ -503,6 +514,14 @@ async function createUser() {
     message.value = "用户已创建";
   });
 }
+async function changePassword() {
+  await run(async () => {
+    if (passwordNew.value !== passwordConfirm.value) throw new Error("两次新密码不一致");
+    await api("/password", {method:"POST", body:JSON.stringify({current_password:passwordCurrent.value,new_password:passwordNew.value,otp:passwordOTP.value})});
+    passwordCurrent.value = passwordNew.value = passwordConfirm.value = passwordOTP.value = "";
+    user.value = null; message.value = "密码已修改，请使用新密码重新登录";
+  });
+}
 async function configureMFA(action: string) {
   await run(async () => {
     const result = await api<{ secret?: string; qr?: string }>("/mfa", {
@@ -513,7 +532,8 @@ async function configureMFA(action: string) {
         code: mfaCode.value,
       }),
     });
-    if (action === "begin") {
+    if (action === "begin" || action === "replace") {
+      mfaCode.value = "";
       mfaSecret.value = result.secret || "";
       mfaQR.value = result.qr || "";
       message.value = "请扫描或手动添加后输入验证码确认";
@@ -570,6 +590,7 @@ onMounted(async () => {
   });
   ready.value = true;
   timer = setInterval(() => {
+    if (user.value && !document.hidden) void checkConnection();
     if (
       user.value &&
       section.value === "devices" &&
@@ -732,7 +753,7 @@ onUnmounted(() => {
             user.admin ? t('平台管理员') : t('项目成员')
           }}</small>
         </div>
-        <button :title="t('退出登录')" @click="logout">↪</button>
+        <button class="account-signout" :title="t('退出登录')" :aria-label="t('退出登录')" @click="logout"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H4v16h5 M14 8l4 4-4 4 M8 12h12"/></svg></button>
       </div>
     </aside>
     <div class="workspace">
@@ -743,7 +764,7 @@ onUnmounted(() => {
           <b>{{
             t(navs.find((n) => n[0] === section)?.[1] || '系统管理')
           }}</b></span
-        ><div class="row"><AppearanceControls :show-about="false" /><span class="top-status"><i></i> {{ t('Hub 运行中') }}</span></div>
+        ><div class="row"><AppearanceControls :show-about="false" /><span class="top-status connection-indicator" :class="{ offline: !hubConnected }" role="status" :title="t(hubConnected ? 'Hub 运行中' : '连接中断')" :aria-label="t(hubConnected ? 'Hub 运行中' : '连接中断')"><i></i><span class="visually-hidden">{{ t(hubConnected ? 'Hub 运行中' : '连接中断') }}</span></span></div>
       </header>
       <div class="content">
         <div class="page-heading">
@@ -824,7 +845,8 @@ onUnmounted(() => {
           <ActivityPanel :request="api" :all="true"
         /></template>
         <template v-else-if="section === 'account'"
-          ><ActivityPanel :request="api" />
+          ><section class="card"><h2>{{ t('修改密码') }}</h2><p class="muted">{{ t('修改后旧密码与所有设备的登录状态立即失效，请使用新密码重新登录。') }}</p>
+<form @submit.prevent="changePassword"><label>{{ t('当前密码') }}<input v-model="passwordCurrent" type="password" autocomplete="current-password" maxlength="72" required /></label><label>{{ t('新密码（12–72 字节）') }}<input v-model="passwordNew" type="password" autocomplete="new-password" maxlength="72" required /></label><label>{{ t('确认新密码') }}<input v-model="passwordConfirm" type="password" autocomplete="new-password" maxlength="72" required /></label><label v-if="mfaEnabled">{{ t('当前验证码') }}<input v-model="passwordOTP" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required /></label><button class="primary" :disabled="busy">{{ t('修改密码并重新登录') }}</button></form></section><ActivityPanel :request="api" />
           <section class="card">
             <h2>{{ t('验证器二次验证') }}</h2>
             <p class="muted">
@@ -836,7 +858,7 @@ onUnmounted(() => {
             <form
               @submit.prevent="
                 configureMFA(
-                  mfaEnabled ? 'disable' : mfaSecret ? 'confirm' : 'begin',
+                  mfaSecret ? 'confirm' : mfaEnabled ? 'replace' : 'begin',
                 )
               "
             >
@@ -869,16 +891,12 @@ onUnmounted(() => {
               /></label>
               <button class="primary" :disabled="busy">
                 {{
-                  mfaEnabled
-                    ? t('验证并关闭')
-                    : mfaSecret
-                      ? t('确认启用')
-                      : t('添加验证器')
+                  mfaSecret ? t('确认绑定') : mfaEnabled ? t('更换验证器') : t('添加验证器')
                 }}
               </button>
-            </form>
+            <button v-if="mfaEnabled && !mfaSecret" type="button" class="secondary" :disabled="busy" @click="configureMFA('disable')">{{ t('验证并关闭') }}</button></form>
             <p class="muted footnote">
-              {{ t('更改后撤销本账号全部会话并重新登录。验证器丢失可通过本机\n              admin-sync 恢复管理员。') }}
+              {{ t('新验证器确认前，原验证器继续有效。确认后旧验证器与所有设备的登录状态立即失效。') }}
             </p>
           </section></template
         >

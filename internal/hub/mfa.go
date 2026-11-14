@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pquerna/otp/totp"
@@ -58,6 +59,8 @@ func (a *App) loginMFA(uid int64, code string) bool {
 }
 
 func (a *App) mfa(w http.ResponseWriter, r *http.Request) {
+	a.credentialMu.Lock()
+	defer a.credentialMu.Unlock()
 	u, ok := a.require(w, r)
 	if !ok {
 		return
@@ -93,9 +96,13 @@ func (a *App) mfa(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "invalid_password", "当前密码不正确")
 		return
 	}
-	if in.Action == "begin" {
-		if sealed != "" {
+	if in.Action == "begin" || in.Action == "replace" {
+		if sealed != "" && in.Action != "replace" {
 			fail(w, 409, "mfa_enabled", "已启用验证器，请先验证并关闭后再更换")
+			return
+		}
+		if in.Action == "replace" && (sealed == "" || !a.loginMFA(u.ID, in.Code)) {
+			fail(w, 403, "invalid_otp", "请提供有效且未使用的当前验证码")
 			return
 		}
 		key, e := totp.Generate(totp.GenerateOpts{Issuer: "Firmware Hub", AccountName: u.Name, SecretSize: 20})
@@ -113,7 +120,7 @@ func (a *App) mfa(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, "mfa_error", "二维码生成失败")
 			return
 		}
-		_, e = a.DB.Exec("INSERT INTO mfa(user_id,pending) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET pending=excluded.pending", u.ID, a.seal(key.Secret()))
+		_, e = a.DB.Exec("INSERT INTO mfa(user_id,pending) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET pending=excluded.pending", u.ID, a.seal(strconv.FormatInt(now()+600, 10)+":"+key.Secret()))
 		if e != nil {
 			fail(w, 500, "database_error", "保存失败")
 			return
@@ -125,12 +132,14 @@ func (a *App) mfa(w http.ResponseWriter, r *http.Request) {
 	var args []any
 	if in.Action == "confirm" {
 		secret, e := a.unseal(pending)
-		if e != nil || secret == "" || sealed != "" || totpStep(secret, in.Code) == 0 {
+		deadline, secret, found := strings.Cut(secret, ":")
+		expires, _ := strconv.ParseInt(deadline, 10, 64)
+		if e != nil || !found || expires <= now() || secret == "" || totpStep(secret, in.Code) == 0 {
 			fail(w, 400, "invalid_otp", "校验码无效，请检查验证器和系统时间")
 			return
 		}
-		query = "UPDATE mfa SET secret=pending,pending='',last_step=0 WHERE user_id=? AND pending=? AND secret=''"
-		args = []any{u.ID, pending}
+		query = "UPDATE mfa SET secret=?,pending='',last_step=0 WHERE user_id=? AND pending=? AND secret=?"
+		args = []any{a.seal(secret), u.ID, pending, sealed}
 	} else if in.Action == "disable" {
 		secret, e := a.unseal(sealed)
 		if e != nil || secret == "" || totpStep(secret, in.Code) == 0 {

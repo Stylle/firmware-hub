@@ -23,9 +23,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 type App struct {
+	credentialMu  sync.Mutex
 	artifactMu    sync.Mutex
 	Restart       chan struct{}
 	restoring     atomic.Bool

@@ -187,6 +187,8 @@ func (a *App) auth(w http.ResponseWriter, r *http.Request) {
 	}
 	var u user
 	var hash string
+	a.credentialMu.Lock()
+	defer a.credentialMu.Unlock()
 	e := a.DB.QueryRow("SELECT id,name,password,admin FROM users WHERE name=?", in.Name).Scan(&u.ID, &u.Name, &hash, &u.Admin)
 	if e != nil {
 		hash = "$2a$12$KbQiHKGT3p6XEOJnB2xeSOclmdZ7nVJ8Wuvh2WzlNXHfn2cKZz.Gm"
