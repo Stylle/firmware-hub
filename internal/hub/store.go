@@ -23,7 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const Version = "0.7.0"
+const Version = "0.7.1"
 
 type App struct {
 	credentialMu  sync.Mutex
