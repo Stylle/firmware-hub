@@ -41,7 +41,7 @@ docker compose run --rm firmware-hub admin-sync
 - 草稿、发布、撤回、历史列表、兼容更新检测。
 - 流式上传下载、SHA-256、HTTP Range / ETag。
 - 可选设备当前版本、最近心跳及升级状态；客户端和 Hub 可独立关闭。
-- MQTT 更新提醒、HMAC Webhook、Telegram 发布通知、重试记录。
+- MQTT 更新提醒、HMAC Webhook、重试记录。
 - 安全 Markdown 发布说明、可选公开发布页。
 - C99 / C++17 SDK、Qt 5.14+ / Qt 6 参考客户端。
 - 单容器、SQLite、本地存储、NAS 独立目录初始化、离线备份命令。
@@ -123,3 +123,9 @@ SDK 不执行远程命令，不自动刷写任意硬件。真实安装应接入�
 ## 维护与验证
 
 格式、共享组件、反向代理与平台验收见 [维护约定](docs/MAINTENANCE.md)。升级前备份完整数据目录及应用密钥，保留原数据卷。
+
+连接／通知测试支持当前表单草稿，无需先保存；测试不保存、不启用配置。详见 [连接与通知测试](docs/integration-tests.md)。
+
+## 通知绑定与连接测试
+
+Telegram 采用「Token → 保存 → 生成绑定码 → 私聊 `/bind`」统一流程，自动注册机器人菜单，无需手填 Chat ID 或发送测试消息。Webhook／飞牛支持直接测试当前表单而不保存。固件仅保留 Webhook／MQTT。详见 [配置说明](docs/integration-tests.md)。

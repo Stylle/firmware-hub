@@ -30,6 +30,7 @@ func (a *App) Handler(web fs.FS) http.Handler {
 	m.HandleFunc("GET /api/v1/mfa", a.mfa)
 	m.HandleFunc("POST /api/v1/mfa", a.mfa)
 	m.HandleFunc("POST /api/v1/password", a.changePassword)
+	m.HandleFunc("POST /api/v1/projects/{id}/notifications/test", a.testNotification)
 	m.HandleFunc("POST /api/v1/users", a.users)
 	m.HandleFunc("GET /api/v1/settings", a.settings)
 	m.HandleFunc("PUT /api/v1/settings", a.settings)

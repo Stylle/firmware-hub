@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './draft-test.js';
 import { t } from "./i18n";
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ReleaseNotes from "./ReleaseNotes.vue";
@@ -485,6 +486,15 @@ async function saveNotice() {
     });
     await loadSection();
     message.value = "通知设置已保存；发布版本时触发";
+  });
+}
+async function testNotice(action = 'send') {
+  await run(async () => {
+    if (!project.value) throw new Error('请先选择项目');
+    const pid = project.value.id;
+    const result = await (window as any).IntegrationDraft.run(() => ({project:project.value?.id,channel:noticeTab.value,action,config:notice.value}), (draft:any) => api<{ result?: {chats?:string[]} }>(`/projects/${pid}/notifications/test`,{method:'POST',body:JSON.stringify({channel:draft.channel,action:draft.action,config:draft.config})}));
+    message.value = '当前表单测试成功，配置未保存';
+    if (action === 'detect' && !notice.value.telegram_chat.trim() && result.result?.chats?.length === 1) notice.value.telegram_chat = result.result.chats[0];
   });
 }
 async function saveMember() {
@@ -1074,19 +1084,13 @@ onUnmounted(() => {
             <p v-if="!owner" class="hint">{{ t('只有项目所有者可以管理通知凭据。') }}</p>
             <form v-else @submit.prevent="saveNotice">
               <div class="notice-tabs" role="tablist" aria-label="通知渠道">
-                <button v-for="c in [{id:'webhook',name:'Webhook'},{id:'telegram',name:'Telegram'},{id:'mqtt',name:'MQTT'}]" :key="c.id" type="button" role="tab" :aria-selected="noticeTab === c.id" :class="{active:noticeTab === c.id}" @click="noticeTab=c.id">{{ c.name }}</button>
+                <button v-for="c in [{id:'webhook',name:'Webhook'},{id:'mqtt',name:'MQTT'}]" :key="c.id" type="button" role="tab" :aria-selected="noticeTab === c.id" :class="{active:noticeTab === c.id}" @click="noticeTab=c.id">{{ c.name }}</button>
               </div>
 <section v-show="noticeTab === 'webhook'" class="notice-channel" role="tabpanel">
  <label class="check"><input type="checkbox" v-model="notice.webhook_enabled" />{{ t('启用 Webhook 通知') }}</label>
  <label>{{ t('连接配置') }}<select v-model.number="notice.webhook_source"><option :value="0">{{ t('本项目独立配置') }}</option><option v-for="p in projects.filter(p => p.id !== project?.id && p.role === 'owner')" :key="p.id" :value="p.id">{{ t('共用：') }}{{ p.name }}</option></select></label>
  <p v-if="notice.webhook_source" class="hint">{{ t('引用所选项目的连接信息，后续修改会同步生效；凭据不会显示到当前项目。仅可引用同一所有者的项目，不能循环引用。') }}</p>
  <div v-else class="form-grid"><label>Webhook 地址<input v-model="notice.webhook" placeholder="https://example.com/webhook" /></label><label>{{ t('Webhook 签名密钥') }}<input v-model="notice.webhook_secret" type="password" autocomplete="new-password" :placeholder="notice.has_webhook_secret ? t('已保存，留空不变') : ''" /></label></div>
-</section>
-<section v-show="noticeTab === 'telegram'" class="notice-channel" role="tabpanel">
- <label class="check"><input type="checkbox" v-model="notice.telegram_enabled" />{{ t('启用 Telegram 通知') }}</label>
- <label>{{ t('连接配置') }}<select v-model.number="notice.telegram_source"><option :value="0">{{ t('本项目独立配置') }}</option><option v-for="p in projects.filter(p => p.id !== project?.id && p.role === 'owner')" :key="p.id" :value="p.id">{{ t('共用：') }}{{ p.name }}</option></select></label>
- <p v-if="notice.telegram_source" class="hint">{{ t('引用所选项目的连接信息，后续修改会同步生效；凭据不会显示到当前项目。仅可引用同一所有者的项目，不能循环引用。') }}</p>
- <div v-else class="form-grid"><label>Bot Token<input v-model="notice.telegram_token" type="password" autocomplete="new-password" :placeholder="notice.has_telegram_token ? t('已保存，留空不变') : ''" /></label><label>Chat ID<input v-model="notice.telegram_chat" /></label></div>
 </section>
 <section v-show="noticeTab === 'mqtt'" class="notice-channel" role="tabpanel">
  <label class="check"><input type="checkbox" v-model="notice.mqtt_enabled" />{{ t('启用 MQTT 通知') }}</label>
@@ -1096,7 +1100,7 @@ onUnmounted(() => {
 <label>{{ t('MQTT 主题 / 项目覆盖') }}<input v-model="notice.mqtt_topic" placeholder="firmware/{project}/available" /><small>{{ t('支持 {project} 自动替换为当前项目标识。共用连接时留空沿用来源主题模板，也可以指定本项目主题。') }}</small></label></section>
 <p class="hint">{{ t('凭据留空保留原值，填写单个 - 清除。关闭渠道会保留配置。') }}</p>
  <label v-if="user.admin" class="check"><input v-model="notice.allow_private" type="checkbox" />{{ t('允许本项目独立连接访问内网 HTTP / TCP（仅可信目标）') }}</label>
- <button class="primary" :disabled="busy">{{ t('保存通知配置') }}</button>
+ <button class="primary" :disabled="busy">{{ t('保存通知配置') }}</button> <button type="button" class="secondary" :disabled="busy" @click="testNotice()">{{ t('测试当前渠道') }}</button><p class="hint">{{ t('测试使用当前表单，不会保存或启用配置；密钥留空沿用已保存的密钥。') }}</p>
  </form></section>
           <section v-else-if="section === 'logs'" class="card">
             <h2>{{ t('项目操作记录') }}</h2>

@@ -23,6 +23,27 @@
       "source": "web/src/restore-wait.mjs",
       "mirrors": [],
       "sha256": "b41f9862e7c9d699972bf4d31dff156084228a7d614810686e00cb276c8c3cfc"
+    },
+    {
+      "name": "integration-test",
+      "version": "2026-11-15",
+      "source": "internal/integrationtest/probe.go",
+      "mirrors": [],
+      "sha256": "22d6a860119f0119c717c33cda0ed8f79bb9364d7d573a7fcc35eff6c8cabc48"
+    },
+    {
+      "name": "integration-draft-ui",
+      "version": "2026-11-15",
+      "source": "web/src/draft-test.js",
+      "mirrors": [],
+      "sha256": "6d70086c12acaab90a11e506644091c703dffe0320553138c72d8fb274413c48"
+    },
+    {
+      "name": "telegram-binding",
+      "version": "2026-11-15",
+      "source": "internal/integrationtest/binding.go",
+      "mirrors": [],
+      "sha256": "5ce823568208d24b2bf84152d9f112f1e272e6c8c3e8e1cfecabf9db8b9af9fc"
     }
   ]
 }

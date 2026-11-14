@@ -76,6 +76,9 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_request", "配置格式错误")
 		return
 	}
+	disabled := false
+	n.TelegramEnabled = &disabled
+	n.TelegramSource = old.TelegramSource
 	if n.WebhookEnabled == nil {
 		n.WebhookEnabled = old.WebhookEnabled
 	}
@@ -124,13 +127,8 @@ func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
 	} else {
 		n.WebhookSecret = a.seal(n.WebhookSecret)
 	}
-	if n.TelegramToken == "" {
-		n.TelegramToken = old.TelegramToken
-	} else if n.TelegramToken == "-" {
-		n.TelegramToken = ""
-	} else {
-		n.TelegramToken = a.seal(n.TelegramToken)
-	}
+	n.TelegramToken = old.TelegramToken
+	n.TelegramChat = old.TelegramChat
 	if n.MQTTPassword == "" {
 		n.MQTTPassword = old.MQTTPassword
 	} else if n.MQTTPassword == "-" {
@@ -229,6 +227,10 @@ func (a *App) deliverOne(ctx context.Context) {
 	}
 	p, e := a.project(pid)
 	if e != nil {
+		return
+	}
+	if kind == "telegram" {
+		_, _ = a.DB.Exec("UPDATE outbox SET state='cancelled',error='Telegram 通知已移除' WHERE id=?", id)
 		return
 	}
 	n, e := a.notification(pid)

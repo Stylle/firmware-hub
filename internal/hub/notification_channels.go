@@ -71,7 +71,7 @@ func notificationFor(q noticeQuery, pid int64) (notification, error) {
 	if err != nil {
 		return n, err
 	}
-	for _, kind := range []string{"webhook", "telegram", "mqtt"} {
+	for _, kind := range []string{"webhook", "mqtt"} {
 		shared, err := resolveNotice(q, pid, kind, map[int64]bool{})
 		if err != nil {
 			return n, err
@@ -85,6 +85,10 @@ func notificationFor(q noticeQuery, pid int64) (notification, error) {
 			n.MQTTURL, n.MQTTUser, n.MQTTPassword, n.MQTTTopic, n.mqttPrivate = shared.MQTTURL, shared.MQTTUser, shared.MQTTPassword, shared.MQTTTopic, shared.AllowPrivate
 		}
 	}
+	disabled := false
+	n.TelegramEnabled = &disabled
+	n.TelegramToken = ""
+	n.TelegramChat = ""
 	var slug string
 	if err = q.QueryRow("SELECT slug FROM projects WHERE id=?", pid).Scan(&slug); err != nil {
 		return n, err
