@@ -72,7 +72,7 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "invalid_password", e.Error())
 		return
 	}
-	p.HasPublishPassword=hash!=""
+	p.HasPublishPassword = hash != ""
 	tx, e := a.DB.Begin()
 	if e != nil {
 		fail(w, 500, "database_error", "创建失败")
