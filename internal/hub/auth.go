@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -172,7 +171,7 @@ func (a *App) auth(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "login_busy", "登录繁忙，请稍后重试")
 		return
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := requestPeer(r)
 	if !a.login.allow(ip) {
 		fail(w, 429, "rate_limited", "尝试次数过多，请稍后重试")
 		return
@@ -226,7 +225,7 @@ func (a *App) auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.recordLogin(r, u.ID, u.Name, true, "ok")
-	http.SetCookie(w, &http.Cookie{Name: "fh_session", Value: token, Path: "/", MaxAge: 7 * 86400, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: "fh_session", Value: token, Path: "/", MaxAge: 7 * 86400, HttpOnly: true, Secure: requestHTTPS(r), SameSite: http.SameSiteStrictMode})
 	a.audit(u.ID, "", "login")
 	jsonOut(w, 200, map[string]any{"user": u})
 }

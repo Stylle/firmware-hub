@@ -959,7 +959,7 @@ progress {
   }
 }
 
-/* Match the workspace palette while retaining the existing two-column login. */
+/* Login surfaces use the workspace palette. */
 :root[data-app-id=hub] .appearance-controls .theme-switch [data-theme-choice]{display:inline-flex;align-items:center;justify-content:center}
 :root[data-app-id=hub] .login-form{border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow)}
 .login-page{width:100%;min-width:0;background:var(--bg)}

@@ -1,0 +1,76 @@
+export type User = { id: number; name: string; admin: boolean; csrf: string };
+export type Project = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  public: boolean;
+  telemetry: boolean;
+  heartbeat: number;
+  timeout: number;
+  public_key: string;
+  role: string;
+  has_publish_password: boolean;
+  publish_password?: string;
+  account_password?: string;
+};
+export type Release = {
+  id: number;
+  version: string;
+  sequence: number;
+  security: number;
+  channel: string;
+  platform: string;
+  arch: string;
+  hardware: string;
+  sha256: string;
+  size: number;
+  notes: string;
+  published: boolean;
+  created: number;
+  download: string;
+  file_name: string;
+  package_kind: string;
+  base_version: string;
+  target_path: string;
+  uploaded_by: string;
+  published_by: string;
+  published_at: number;
+};
+export type Device = {
+  id: number;
+  name: string;
+  version: string;
+  platform: string;
+  arch: string;
+  hardware: string;
+  status: string;
+  last_seen: number;
+  online_state: string;
+  revoked: boolean;
+};
+export type Notice = {
+ webhook_enabled: boolean; telegram_enabled: boolean; mqtt_enabled: boolean;
+ webhook_source: number; telegram_source: number; mqtt_source: number;
+
+  webhook: string;
+  webhook_secret: string;
+  telegram_token: string;
+  telegram_chat: string;
+  mqtt_url: string;
+  mqtt_user: string;
+  mqtt_password: string;
+  mqtt_topic: string;
+  allow_private: boolean;
+  has_webhook_secret?: boolean;
+  has_telegram_token?: boolean;
+  has_mqtt_password?: boolean;
+};
+export type Log = {
+  id: number;
+  kind: string;
+  state: string;
+  attempts: number;
+  error: string;
+  created: number;
+};

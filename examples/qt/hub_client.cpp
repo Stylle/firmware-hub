@@ -1,5 +1,6 @@
 #include "hub_client.hpp"
 #include "download_task.hpp"
+#include "install_policy.hpp"
 #include "monocypher-ed25519.h"
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -282,6 +283,13 @@ QJsonObject HubClient::installationPlan(const QString &downloaded, const QString
         package_.isEmpty())
         return {};
     const QString kind = package_.value("package_kind").toString("full");
+    // FH1 authenticates bytes, not outer installation instructions. Signed
+    // desktop updates may only extract complete signed ZIP contents; file
+    // relocation requires a future versioned signed installation manifest.
+    if (!fh_desktop_install_allowed(!config_.publicKey.isEmpty(), kind == "full",
+                                   !package_.value("base_version").toString().isEmpty(),
+                                   !package_.value("target_path").toString().isEmpty()))
+        return {};
     if (kind == "full" &&
         !package_.value("file_name").toString().endsWith(".zip", Qt::CaseInsensitive))
         return {};

@@ -1,0 +1,7 @@
+{
+  "kind": "hub",
+  "binary": "build/browser-app",
+  "health": "/healthz",
+  "route": "/",
+  "form": ".login-form form"
+}

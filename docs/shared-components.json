@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "components": [
+    {
+      "name": "theme",
+      "version": "2026-11-14",
+      "source": "web/src/design-system.css",
+      "mirrors": [
+        "web/public/design-system.css"
+      ],
+      "sha256": "27ad832e8fcae3fe1d276b3d659f55c9b485e6e9d7e69b9016cbba7ae91f595a"
+    },
+    {
+      "name": "portable-backup",
+      "version": "2026-11-14",
+      "source": "internal/portablebackup/backup.go",
+      "mirrors": [],
+      "sha256": "ac1db5a1887dedaab0c1ba815d4033c03fbc682419c1e3939cbcef19b6d9fefe"
+    },
+    {
+      "name": "restore-wait",
+      "version": "2026-11-14",
+      "source": "web/src/restore-wait.mjs",
+      "mirrors": [],
+      "sha256": "b41f9862e7c9d699972bf4d31dff156084228a7d614810686e00cb276c8c3cfc"
+    }
+  ]
+}

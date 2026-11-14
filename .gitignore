@@ -16,3 +16,5 @@
 *.user
 .env
 /sdk/third_party/monocypher/upstream.tar.gz
+
+/.browser-qa/

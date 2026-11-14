@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,9 +23,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 type App struct {
+	artifactMu    sync.Mutex
 	Restart       chan struct{}
 	restoring     atomic.Bool
 	DB            *sql.DB

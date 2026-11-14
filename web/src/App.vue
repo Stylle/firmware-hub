@@ -6,82 +6,7 @@ import BackupPanel from "./BackupPanel.vue";
 import ActivityPanel from "./ActivityPanel.vue";
 import AppearanceControls from "./AppearanceControls.vue";
 import UiIcon from "./UiIcon.vue";
-type User = { id: number; name: string; admin: boolean; csrf: string };
-type Project = {
-  id: number;
-  slug: string;
-  name: string;
-  description: string;
-  public: boolean;
-  telemetry: boolean;
-  heartbeat: number;
-  timeout: number;
-  public_key: string;
-  role: string;
-  has_publish_password: boolean;
-  publish_password?: string;
-  account_password?: string;
-};
-type Release = {
-  id: number;
-  version: string;
-  sequence: number;
-  security: number;
-  channel: string;
-  platform: string;
-  arch: string;
-  hardware: string;
-  sha256: string;
-  size: number;
-  notes: string;
-  published: boolean;
-  created: number;
-  download: string;
-  file_name: string;
-  package_kind: string;
-  base_version: string;
-  target_path: string;
-  uploaded_by: string;
-  published_by: string;
-  published_at: number;
-};
-type Device = {
-  id: number;
-  name: string;
-  version: string;
-  platform: string;
-  arch: string;
-  hardware: string;
-  status: string;
-  last_seen: number;
-  online_state: string;
-  revoked: boolean;
-};
-type Notice = {
- webhook_enabled: boolean; telegram_enabled: boolean; mqtt_enabled: boolean;
- webhook_source: number; telegram_source: number; mqtt_source: number;
-
-  webhook: string;
-  webhook_secret: string;
-  telegram_token: string;
-  telegram_chat: string;
-  mqtt_url: string;
-  mqtt_user: string;
-  mqtt_password: string;
-  mqtt_topic: string;
-  allow_private: boolean;
-  has_webhook_secret?: boolean;
-  has_telegram_token?: boolean;
-  has_mqtt_password?: boolean;
-};
-type Log = {
-  id: number;
-  kind: string;
-  state: string;
-  attempts: number;
-  error: string;
-  created: number;
-};
+import type { User, Project, Release, Device, Notice, Log } from './types';
 const user = ref<User | null>(null),
   ready = ref(false),
   busy = ref(false),
@@ -668,7 +593,7 @@ onUnmounted(() => {
       ><a href="/">{{ t('管理登录 →') }}</a>
     </div>
     <header class="public-head">
-      <span class="eyebrow">RELEASE CENTER</span>
+      
       <h1>
         {{ publicSlug ? publicProject?.name || t('项目不可用') : t('公开版本中心') }}
       </h1>
@@ -726,7 +651,7 @@ onUnmounted(() => {
       <AppearanceControls :show-about="false" />
     </header>
     <section class="login-form">
-      <span class="eyebrow">WELCOME BACK</span>
+      
       <h2>{{ t('登录工作空间') }}</h2>
       <p class="muted">{{ t('使用管理员或项目成员账号继续。') }}</p>
       <p><a href="/?public">{{ t('无需登录，浏览公开版本 →') }}</a></p>
@@ -763,7 +688,7 @@ onUnmounted(() => {
     <button class="drawer-backdrop" type="button" data-drawer-close :aria-label="t('关闭导航')"></button>
     <aside id="hub-nav" class="sidebar" data-drawer :aria-label="t('工作空间导航')">
       <a class="brand" href="/"><img src="/icon.svg" alt="" />Firmware Hub</a>
-      <div class="space-label">{{ t('工作空间') }} <span>v0.4</span></div>
+      <div class="space-label">{{ t('工作空间') }} <span>v0.6.0</span></div>
       <button
         class="new-project"
         @click="

@@ -5,7 +5,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -17,11 +19,36 @@ func shortText(s string, max int) string {
 	return string(r)
 }
 
-// Do not trust arbitrary forwarded addresses. Behind a proxy this is its peer.
+// Forwarded identities and HTTPS require an explicitly trusted proxy peer.
+func trustedProxy(r *http.Request) bool {
+	host, _, e := net.SplitHostPort(r.RemoteAddr)
+	if e != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	for _, value := range strings.Split(os.Getenv("TRUSTED_PROXIES"), ",") {
+		value = strings.TrimSpace(value)
+		if parsed := net.ParseIP(value); parsed != nil && parsed.Equal(ip) {
+			return true
+		}
+		if _, block, e := net.ParseCIDR(value); e == nil && block.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+func requestHTTPS(r *http.Request) bool {
+	return r.TLS != nil || os.Getenv("PUBLIC_HTTPS") == "1" || trustedProxy(r) && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
 func requestPeer(r *http.Request) string {
 	host, _, e := net.SplitHostPort(r.RemoteAddr)
 	if e != nil {
 		return "unknown"
+	}
+	if trustedProxy(r) {
+		if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
+			return ip.String()
+		}
 	}
 	return host
 }

@@ -5,19 +5,25 @@ import (
 	"encoding/json"
 	"mime/multipart"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-func (f *fixture) accountUpload(pid int64, meta releaseMetadata) *httptest.ResponseRecorder {
+func (f *fixture) accountUpload(pid int64, meta releaseMetadata, contents ...[]byte) *httptest.ResponseRecorder {
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	b, _ := json.Marshal(meta)
 	_ = mw.WriteField("metadata", string(b))
 	_ = mw.WriteField("notes", "## Test release")
 	part, _ := mw.CreateFormFile("file", "module.dll")
-	_, _ = part.Write([]byte("inert-test-not-a-dll"))
+	data := []byte("inert-test-not-a-dll")
+	if len(contents) > 0 {
+		data = contents[0]
+	}
+	_, _ = part.Write(data)
 	_ = mw.Close()
 	r := httptest.NewRequest("POST", "/api/v1/projects/"+strconv.FormatInt(pid, 10)+"/releases", &body)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
@@ -26,6 +32,46 @@ func (f *fixture) accountUpload(pid int64, meta releaseMetadata) *httptest.Respo
 	w := httptest.NewRecorder()
 	f.a.Handler(nil).ServeHTTP(w, r)
 	return w
+}
+
+func TestRejectedUploadsDoNotRetainArtifacts(t *testing.T) {
+	f := setup(t)
+	r := f.call("POST", "/api/v1/projects", project{Slug: "account-fixture", Name: "Fixture", Heartbeat: 60, Timeout: 180}, true, "")
+	if r.Code != 201 {
+		t.Fatal("project failed")
+	}
+	var p project
+	_ = json.Unmarshal(r.Body.Bytes(), &p)
+	meta := releaseMetadata{Version: "1.0.0", Channel: "stable", Platform: "any", Arch: "any", Hardware: "any", PackageKind: "full"}
+	if f.accountUpload(p.ID, meta).Code != 201 {
+		t.Fatal("initial upload failed")
+	}
+	for _, payload := range []string{"different-one", "different-two", "inert-test-not-a-dll"} {
+		if f.accountUpload(p.ID, meta, []byte(payload)).Code != 409 {
+			t.Fatal("duplicate accepted")
+		}
+	}
+	entries, e := os.ReadDir(filepath.Join(f.a.Data, "artifacts"))
+	if e != nil || len(entries) != 1 {
+		t.Fatal("failed uploads retained files")
+	}
+	_, e = f.a.DB.Exec("CREATE TRIGGER fixture_failure BEFORE INSERT ON release_info BEGIN SELECT RAISE(ABORT,'fixture'); END")
+	if e != nil {
+		t.Fatal(e)
+	}
+	meta.Version = "2.0.0"
+	if f.accountUpload(p.ID, meta, []byte("failed-metadata")).Code != 500 {
+		t.Fatal("metadata failure not triggered")
+	}
+	entries, e = os.ReadDir(filepath.Join(f.a.Data, "artifacts"))
+	if e != nil || len(entries) != 1 {
+		t.Fatal("metadata failure retained files")
+	}
+	var count int
+	_ = f.a.DB.QueryRow("SELECT COUNT(*) FROM releases WHERE project_id=?", p.ID).Scan(&count)
+	if count != 1 {
+		t.Fatal("metadata rollback failed")
+	}
 }
 func TestAccountReleasesAndPublicDiscovery(t *testing.T) {
 	f := setup(t)

@@ -257,19 +257,25 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 		fail(w, 507, "storage_error", "保存文件失败")
 		return
 	}
+	a.artifactMu.Lock()
+	defer a.artifactMu.Unlock()
 	target := filepath.Join(a.Data, "artifacts", m.SHA256)
-	if _, e = os.Stat(target); os.IsNotExist(e) {
-		if e = os.Rename(temp, target); e != nil {
-			fail(w, 507, "storage_error", "固件落盘失败")
-			return
-		}
-	}
+	created, committed := false, false
 	tx, e := a.DB.Begin()
 	if e != nil {
 		fail(w, 500, "database_error", "保存版本失败")
 		return
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+		if created && !committed {
+			var references int
+			// The transaction must release SQLite's sole connection first.
+			if a.DB.QueryRow("SELECT COUNT(*) FROM releases WHERE sha256=?", m.SHA256).Scan(&references) == nil && references == 0 {
+				_ = os.Remove(target)
+			}
+		}
+	}()
 	if accountMode {
 		if m.Sequence == 0 {
 			if tx.QueryRow("SELECT COALESCE(MAX(sequence),0)+1 FROM releases WHERE project_id=?", id).Scan(&m.Sequence) != nil {
@@ -295,7 +301,16 @@ func (a *App) releases(w http.ResponseWriter, r *http.Request) {
 		_, e = tx.Exec("INSERT INTO audit(user_id,project,action,at) VALUES(?,?,?,?)", u.ID, p.Slug, fmt.Sprintf("release.upload id=%d version=%s", rid, m.Version), now())
 	}
 	if e == nil {
+		if _, statErr := os.Stat(target); os.IsNotExist(statErr) {
+			e = os.Rename(temp, target)
+			created = e == nil
+		} else if statErr != nil {
+			e = statErr
+		}
+	}
+	if e == nil {
 		e = tx.Commit()
+		committed = e == nil
 	}
 	if e != nil {
 		fail(w, 500, "database_error", "保存发布记录失败")
@@ -434,7 +449,8 @@ func (a *App) download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Cache-Control", "private, no-cache")
-	http.ServeContent(w, r, version, st.ModTime(), f)
+	defer http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	http.ServeContent(idleDownloadWriter{ResponseWriter: w, idle: 30 * time.Second}, r, version, st.ModTime(), f)
 }
 func (a *App) public(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("slug") == "" {
