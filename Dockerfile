@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags=
  && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/data-init ./cmd/data-init \
  && go run ./cmd/notices /out/licenses
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata su-exec \
  && addgroup -g 10001 hub && adduser -D -H -u 10001 -G hub hub \
  && mkdir /data && chown hub:hub /data
